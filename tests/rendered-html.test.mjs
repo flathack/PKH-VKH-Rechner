@@ -18,14 +18,7 @@ import {
 } from "../app/pkh-law.mjs";
 
 const REQUIRED_ALLOWANCE_KEYS = ["employed", "party", "adult", "teen", "child", "youngChild"];
-const REQUIRED_DISCLAIMER_PATTERNS = [
-  /privates Hobbyprojekt eines Rechtspflegers/,
-  /kein offizielles Angebot eines Gerichts oder einer Behörde/,
-  /ersetzt keine Rechtsberatung/,
-  /kein Anspruch auf Richtigkeit, Vollständigkeit oder Aktualität/,
-  /Die Berechnung und ihr Ergebnis sind unverbindlich/,
-  /maßgeblich sind die geltenden Rechtsvorschriften und die Entscheidung des zuständigen Gerichts/i,
-];
+const REMOVED_DISCLAIMER_PATTERN = /legal-disclaimer|screen-disclaimer|print-disclaimer|Rechtlicher Hinweis|privates Hobbyprojekt eines Rechtspflegers|ersetzt keine Rechtsberatung|kein Anspruch auf Richtigkeit, Vollständigkeit oder Aktualität|Die Berechnung und ihr Ergebnis sind unverbindlich/i;
 const OFFICIAL_SOURCE_HOSTS = new Set(["www.gesetze-im-internet.de", "www.recht.bund.de"]);
 const execFileAsync = promisify(execFile);
 const PROJECT_ROOT = fileURLToPath(new URL("../", import.meta.url));
@@ -60,19 +53,6 @@ function calculationInput(overrides = {}) {
     customDeductions: [],
     ...overrides,
   };
-}
-
-function assertDisclaimerStatements(output) {
-  const normalizedOutput = output.replace(/\s+/g, " ");
-  for (const pattern of REQUIRED_DISCLAIMER_PATTERNS) {
-    assert.match(normalizedOutput, pattern);
-  }
-}
-
-function getSectionByClass(html, className) {
-  const section = html.match(new RegExp(`<section class="${className}"[\\s\\S]*?</section>`));
-  assert.ok(section, `Abschnitt ${className} fehlt`);
-  return section[0];
 }
 
 async function render() {
@@ -183,14 +163,18 @@ test("liefert den lokalen PKH/VKH-Ratenrechner aus", async () => {
   assert.doesNotMatch(html, /codex-preview|react-loading-skeleton|Your site is taking shape/i);
 });
 
-test("kennzeichnet den Rechner als privates Hobbyprojekt mit unverbindlichem Ergebnis", async () => {
+test("enthält keinen rechtlichen Disclaimer mehr", async () => {
   const response = await render();
   const html = await response.text();
-  const readme = await readFile(new URL("../README.md", import.meta.url), "utf8");
+  const [pageSource, css, readme] = await Promise.all([
+    readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
+    readFile(new URL("../README.md", import.meta.url), "utf8"),
+  ]);
 
-  assertDisclaimerStatements(getSectionByClass(html, "legal-disclaimer screen-disclaimer"));
-  assertDisclaimerStatements(getSectionByClass(html, "legal-disclaimer print-disclaimer"));
-  assertDisclaimerStatements(readme);
+  for (const output of [html, pageSource, css, readme]) {
+    assert.doesNotMatch(output.replace(/\s+/g, " "), REMOVED_DISCLAIMER_PATTERN);
+  }
 });
 
 test("verwendet die amtlichen Freibeträge der PKHB 2026", () => {
@@ -325,10 +309,6 @@ test("unterdrückt Browser-Kopf- und Fußzeilen in der Druckfassung", async () =
   const css = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
   assert.match(css, /@page\s*{[^}]*size:\s*A4 portrait;[^}]*margin:\s*0;/s);
   assert.match(css, /\.print-document\s*{[^}]*width:\s*210mm;[^}]*min-height:\s*297mm;[^}]*padding:\s*18mm 20mm 17mm;/s);
-  assert.match(
-    css,
-    /\.document-footer \.legal-disclaimer strong\s*{[^}]*display:\s*inline;[^}]*font-size:\s*inherit;/s,
-  );
 });
 
 test("stellt einen automatischen Single-HTML-Release bereit", async () => {
@@ -479,8 +459,7 @@ test("erzeugt maschinenlesbare Release-Pfade mit gültiger SHA-256-Prüfsumme", 
 
     assert.equal(expectedFilename, basename(htmlPath));
     assert.equal(actualHash, expectedHash);
-    assert.match(htmlText, /legal-disclaimer/);
-    assertDisclaimerStatements(htmlText);
+    assert.doesNotMatch(htmlText.replace(/\s+/g, " "), REMOVED_DISCLAIMER_PATTERN);
   } finally {
     await rm(tempDirectory, { recursive: true, force: true });
   }

@@ -87,23 +87,6 @@ function SectionHeader({ number, title, subtitle }: { number: string; title: str
   );
 }
 
-function LegalDisclaimer({ className, titleId }: { className: string; titleId: string }) {
-  return (
-    <section className={`legal-disclaimer ${className}`} aria-labelledby={titleId}>
-      <h2 id={titleId}>Rechtlicher Hinweis</h2>
-      <p>
-        Dieser Rechner ist ein <strong>privates Hobbyprojekt eines Rechtspflegers</strong>. Er ist kein
-        offizielles Angebot eines Gerichts oder einer Behörde und ersetzt keine Rechtsberatung.
-      </p>
-      <p>
-        Trotz sorgfältiger Entwicklung und Pflege besteht kein Anspruch auf Richtigkeit, Vollständigkeit
-        oder Aktualität. Die Berechnung und ihr Ergebnis sind unverbindlich; maßgeblich sind die geltenden
-        Rechtsvorschriften und die Entscheidung des zuständigen Gerichts.
-      </p>
-    </section>
-  );
-}
-
 export default function Home() {
   const [location, setLocation] = useState<LocationKey>("bund");
   const [netIncome, setNetIncome] = useState(0);
@@ -222,8 +205,6 @@ export default function Home() {
         </div>
       </section>
 
-      <LegalDisclaimer className="screen-disclaimer" titleId="screen-legal-disclaimer-title" />
-
       <article className="print-document" aria-label="Druckfassung der PKH- und VKH-Ratenberechnung">
         <header className="document-header">
           <div className="document-wordmark">
@@ -311,7 +292,6 @@ export default function Home() {
         </section>
 
         <footer className="document-footer">
-          <LegalDisclaimer className="print-disclaimer" titleId="print-legal-disclaimer-title" />
           <div><span>Rechtsgrundlage: § 115 ZPO</span><span>Freibeträge: {legalBasis.shortName}, {legalBasis.citation}</span></div>
         </footer>
       </article>

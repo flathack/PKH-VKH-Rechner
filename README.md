@@ -41,17 +41,6 @@ Die Wartungsautomation prüft amtliche Quellen in Zeitfenstern rund um den
 die sämtliche Tests und Builds bestehen. Das fail-closed Verfahren ist in
 [`docs/legal-update-runbook.md`](docs/legal-update-runbook.md) beschrieben.
 
-## Rechtlicher Hinweis
-
-Dieser Rechner ist ein privates Hobbyprojekt eines Rechtspflegers. Er ist kein
-offizielles Angebot eines Gerichts oder einer Behörde und ersetzt keine
-Rechtsberatung.
-
-Trotz sorgfältiger Entwicklung und Pflege besteht kein Anspruch auf Richtigkeit,
-Vollständigkeit oder Aktualität. Die Berechnung und ihr Ergebnis sind
-unverbindlich; maßgeblich sind die geltenden Rechtsvorschriften und die
-Entscheidung des zuständigen Gerichts.
-
 ## Lokal starten
 
 Voraussetzung ist Node.js ab Version 22.13.

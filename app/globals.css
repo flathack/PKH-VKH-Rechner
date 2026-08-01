@@ -141,24 +141,6 @@ button { cursor: pointer; }
 .hero-law span, .hero-law small { display: block; color: #b9cdd3; font-size: 11px; }
 .hero-law strong { display: block; margin: 4px 0 8px; font-family: Georgia, serif; font-size: 24px; }
 
-.legal-disclaimer {
-  max-width: 1184px;
-  margin: 0 auto 28px;
-  padding: 18px 22px;
-  border: 1px solid #e5d3b7;
-  border-left: 4px solid var(--accent);
-  border-radius: 14px;
-  background: #fffaf3;
-  display: grid;
-  grid-template-columns: 150px 1fr 1fr;
-  gap: 20px;
-  align-items: start;
-}
-
-.legal-disclaimer h2 { margin: 0; color: #78562d; font-size: 14px; line-height: 1.4; }
-.legal-disclaimer p { margin: 0; color: #5c5144; font-size: 12px; line-height: 1.55; }
-.legal-disclaimer strong { color: #40382f; }
-
 .workspace {
   max-width: 1184px;
   margin: 0 auto;
@@ -307,13 +289,11 @@ footer strong { color: #435961; font-size: 12px; }
 footer p { margin: 0; }
 
 @media (max-width: 980px) {
-  .hero, .screen-disclaimer, .workspace { margin-left: 20px; margin-right: 20px; }
+  .hero, .workspace { margin-left: 20px; margin-right: 20px; }
   .workspace { grid-template-columns: 1fr; }
   .result-card { position: relative; top: 0; grid-row: 1; }
   .hero { grid-template-columns: 1fr; gap: 28px; }
   .hero-law { max-width: 280px; }
-  .legal-disclaimer { grid-template-columns: 1fr 1fr; }
-  .legal-disclaimer h2 { grid-column: 1 / -1; }
   footer { margin-left: 20px; margin-right: 20px; }
 }
 
@@ -323,8 +303,6 @@ footer p { margin: 0; }
   .hero { margin: 0 12px 16px; padding: 32px 24px; border-radius: 16px; }
   .hero h1 { font-size: 31px; }
   .hero p { font-size: 14px; }
-  .screen-disclaimer { margin: 0 12px 16px; padding: 17px 18px; grid-template-columns: 1fr; gap: 9px; }
-  .legal-disclaimer h2 { grid-column: auto; }
   .workspace { margin: 0 12px; }
   .form-card, .result-card { padding: 21px; border-radius: 14px; }
   .field-grid, .sub-panel { grid-template-columns: 1fr; }
@@ -392,9 +370,5 @@ footer p { margin: 0; }
   .document-explanation { margin-top: 8mm; break-inside: avoid; }
   .document-explanation p { margin: 0; color: #41494c; font-size: 7.7pt; text-align: justify; }
   .document-footer { max-width: none; margin-top: 12mm; padding-top: 4mm; border-top: .5pt solid #8e9699; color: #5d6669; font-size: 7pt; display: block; break-inside: avoid; }
-  .document-footer .legal-disclaimer { max-width: none; margin: 0 0 3mm; padding: 0; border: 0; border-radius: 0; background: transparent; display: block; }
-  .document-footer .legal-disclaimer h2 { margin: 0 0 1.5mm; color: #41494c; font-size: 7.5pt; }
-  .document-footer .legal-disclaimer p { margin: 0 0 1.5mm; color: #5d6669; font-size: 7pt; line-height: 1.4; }
-  .document-footer .legal-disclaimer strong { display: inline; font-size: inherit; }
   .document-footer > div { display: flex; justify-content: space-between; gap: 8mm; }
 }
