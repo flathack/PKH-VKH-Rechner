@@ -41,6 +41,17 @@ Die Wartungsautomation prüft amtliche Quellen in Zeitfenstern rund um den
 die sämtliche Tests und Builds bestehen. Das fail-closed Verfahren ist in
 [`docs/legal-update-runbook.md`](docs/legal-update-runbook.md) beschrieben.
 
+## Rechtlicher Hinweis
+
+Dieser Rechner ist ein privates Hobbyprojekt eines Rechtspflegers. Er ist kein
+offizielles Angebot eines Gerichts oder einer Behörde und ersetzt keine
+Rechtsberatung.
+
+Trotz sorgfältiger Entwicklung und Pflege besteht kein Anspruch auf Richtigkeit,
+Vollständigkeit oder Aktualität. Die Berechnung und ihr Ergebnis sind
+unverbindlich; maßgeblich sind die geltenden Rechtsvorschriften und die
+Entscheidung des zuständigen Gerichts.
+
 ## Lokal starten
 
 Voraussetzung ist Node.js ab Version 22.13.
@@ -64,6 +75,3 @@ npm run build:single
 Der statische GitHub-Pages-Build wird bei Änderungen auf `main` automatisch
 veröffentlicht. Der Ein-Datei-Build wird bei einem Versions-Tag automatisch
 als HTML-Datei unter GitHub Releases bereitgestellt.
-
-Die Berechnung dient nur der unverbindlichen Orientierung. Die endgültige
-Prüfung und Festsetzung obliegt dem zuständigen Gericht.

@@ -162,6 +162,25 @@ test("liefert den lokalen PKH/VKH-Ratenrechner aus", async () => {
   assert.doesNotMatch(html, /codex-preview|react-loading-skeleton|Your site is taking shape/i);
 });
 
+test("kennzeichnet den Rechner als privates Hobbyprojekt ohne Rechtsberatung oder Richtigkeitsanspruch", async () => {
+  const response = await render();
+  const html = await response.text();
+  const readme = await readFile(new URL("../README.md", import.meta.url), "utf8");
+
+  assert.match(html, /class="legal-disclaimer screen-disclaimer"/);
+  assert.match(html, /class="legal-disclaimer print-disclaimer"/);
+  assert.equal((html.match(/privates Hobbyprojekt eines Rechtspflegers/g) ?? []).length, 2);
+
+  for (const output of [html, readme]) {
+    const normalizedOutput = output.replace(/\s+/g, " ");
+    assert.match(normalizedOutput, /privates Hobbyprojekt eines Rechtspflegers/);
+    assert.match(normalizedOutput, /kein offizielles Angebot eines Gerichts oder einer Behörde/);
+    assert.match(normalizedOutput, /ersetzt keine Rechtsberatung/);
+    assert.match(normalizedOutput, /kein Anspruch auf Richtigkeit, Vollständigkeit oder Aktualität/);
+    assert.match(normalizedOutput, /maßgeblich sind die geltenden Rechtsvorschriften und die Entscheidung des zuständigen Gerichts/i);
+  }
+});
+
 test("verwendet die amtlichen Freibeträge der PKHB 2026", () => {
   assert.deepEqual(ALLOWANCE_SETS, {
     bund: {
@@ -294,6 +313,10 @@ test("unterdrückt Browser-Kopf- und Fußzeilen in der Druckfassung", async () =
   const css = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
   assert.match(css, /@page\s*{[^}]*size:\s*A4 portrait;[^}]*margin:\s*0;/s);
   assert.match(css, /\.print-document\s*{[^}]*width:\s*210mm;[^}]*min-height:\s*297mm;[^}]*padding:\s*18mm 20mm 17mm;/s);
+  assert.match(
+    css,
+    /\.document-footer \.legal-disclaimer strong\s*{[^}]*display:\s*inline;[^}]*font-size:\s*inherit;/s,
+  );
 });
 
 test("stellt einen automatischen Single-HTML-Release bereit", async () => {
@@ -438,11 +461,18 @@ test("erzeugt maschinenlesbare Release-Pfade mit gültiger SHA-256-Prüfsumme", 
     const htmlPath = resolve(PROJECT_ROOT, outputs.html);
     const checksumPath = resolve(PROJECT_ROOT, outputs.checksum);
     const html = await readFile(htmlPath);
+    const htmlText = html.toString("utf8");
     const [expectedHash, expectedFilename] = (await readFile(checksumPath, "utf8")).trim().split(/\s+/);
     const actualHash = createHash("sha256").update(html).digest("hex");
 
     assert.equal(expectedFilename, basename(htmlPath));
     assert.equal(actualHash, expectedHash);
+    assert.match(htmlText, /legal-disclaimer/);
+    assert.match(htmlText, /privates Hobbyprojekt eines Rechtspflegers/);
+    assert.match(htmlText, /kein offizielles Angebot eines Gerichts oder einer Behörde/);
+    assert.match(htmlText, /ersetzt keine Rechtsberatung/);
+    assert.match(htmlText, /kein Anspruch auf Richtigkeit, Vollständigkeit oder Aktualität/);
+    assert.match(htmlText, /unverbindlich/);
   } finally {
     await rm(tempDirectory, { recursive: true, force: true });
   }
