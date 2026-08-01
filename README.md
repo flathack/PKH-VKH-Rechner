@@ -2,6 +2,13 @@
 
 **Online-Version:** https://flathack.github.io/PKH-VKH-Rechner/
 
+**Download als einzelne HTML-Datei:**
+https://github.com/flathack/PKH-VKH-Rechner/releases/latest/download/PKH-VKH-Rechner-2026.html
+
+Die heruntergeladene Datei kann direkt per Doppelklick im Browser geöffnet
+werden. Sie enthält den vollständigen Rechner und benötigt keine Installation
+oder Internetverbindung.
+
 Lokale Browser-Anwendung zur überschlägigen Berechnung einer Monatsrate für
 Prozess- und Verfahrenskostenhilfe nach § 115 ZPO.
 
@@ -44,10 +51,12 @@ Die im Terminal angezeigte lokale Adresse anschließend im Browser öffnen.
 npm run build
 npm test
 npm run build:pages
+npm run build:single
 ```
 
 Der statische GitHub-Pages-Build wird bei Änderungen auf `main` automatisch
-veröffentlicht.
+veröffentlicht. Der Ein-Datei-Build wird bei einem Versions-Tag automatisch
+als HTML-Datei unter GitHub Releases bereitgestellt.
 
 Die Berechnung dient nur der unverbindlichen Orientierung. Die endgültige
 Prüfung und Festsetzung obliegt dem zuständigen Gericht.

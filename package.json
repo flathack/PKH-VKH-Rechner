@@ -9,10 +9,11 @@
     "dev": "vinext dev",
     "build": "vinext build",
     "build:pages": "vite build --config vite.pages.config.ts",
+    "build:single": "node scripts/build-single-html.mjs",
     "start": "vinext start",
     "typecheck": "tsc --noEmit",
     "test": "npm run typecheck && npm run build && node --test tests/rendered-html.test.mjs",
-    "lint": "eslint . --ignore-pattern dist --ignore-pattern .next --ignore-pattern pages-dist",
+    "lint": "eslint . --ignore-pattern dist --ignore-pattern .next --ignore-pattern pages-dist --ignore-pattern single-dist --ignore-pattern release",
     "db:generate": "drizzle-kit generate"
   },
   "dependencies": {

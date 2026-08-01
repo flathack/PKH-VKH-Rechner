@@ -40,6 +40,8 @@ next-env.d.ts
 *.tsbuildinfo
 /dist/
 /pages-dist/
+/single-dist/
+/release/
 /.wrangler/
 /outputs/
 /work/

@@ -177,3 +177,16 @@ test("unterdrückt Browser-Kopf- und Fußzeilen in der Druckfassung", async () =
   assert.match(css, /@page\s*{[^}]*size:\s*A4 portrait;[^}]*margin:\s*0;/s);
   assert.match(css, /\.print-document\s*{[^}]*width:\s*210mm;[^}]*min-height:\s*297mm;[^}]*padding:\s*18mm 20mm 17mm;/s);
 });
+
+test("stellt einen automatischen Single-HTML-Release bereit", async () => {
+  const [packageJson, releaseWorkflow, buildScript] = await Promise.all([
+    readFile(new URL("../package.json", import.meta.url), "utf8"),
+    readFile(new URL("../.github/workflows/release.yml", import.meta.url), "utf8"),
+    readFile(new URL("../scripts/build-single-html.mjs", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(packageJson, /"build:single":\s*"node scripts\/build-single-html\.mjs"/);
+  assert.match(releaseWorkflow, /tags:\s*\n\s*- "v\*"/);
+  assert.match(releaseWorkflow, /release\/PKH-VKH-Rechner-2026\.html/);
+  assert.match(buildScript, /createHash\("sha256"\)/);
+});
