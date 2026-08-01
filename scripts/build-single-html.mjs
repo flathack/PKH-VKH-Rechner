@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { Script } from "node:vm";
 import { build } from "vite";
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url));
@@ -36,9 +37,15 @@ const [javaScript, css] = await Promise.all([
   readFile(resolveAsset(styleMatch[1]), "utf8"),
 ]);
 
+const inlineStyle = `<style>${css.replace(/<\/style/gi, "<\\/style")}</style>`;
+const inlineScript = `<script type="module">${javaScript.replace(/<\/script/gi, "<\\/script")}</script>`;
+
+// Replacement callbacks preserve dollar sequences such as $&, $` and $' in
+// minified JavaScript. A plain replacement string would interpret them as
+// String.replace placeholders and corrupt the generated HTML.
 html = html
-  .replace(styleMatch[0], `<style>${css.replace(/<\/style/gi, "<\\/style")}</style>`)
-  .replace(scriptMatch[0], `<script type="module">${javaScript.replace(/<\/script/gi, "<\\/script")}</script>`);
+  .replace(styleMatch[0], () => inlineStyle)
+  .replace(scriptMatch[0], () => inlineScript);
 
 const firstScriptStart = html.indexOf("<script");
 const firstScriptEnd = html.indexOf(">", firstScriptStart);
@@ -50,6 +57,14 @@ if (firstScriptStart < 0 || !/type="module"/i.test(firstScriptTag) || /\bsrc=/i.
 if (!html.includes("<style>") || /<link\b[^>]*\brel="stylesheet"/i.test(html.slice(0, firstScriptStart))) {
   throw new Error("Das CSS wurde nicht vollständig in die HTML-Datei eingebettet.");
 }
+
+if ((html.match(/<\/script/gi) ?? []).length !== 1 || (html.match(/<\/style/gi) ?? []).length !== 1) {
+  throw new Error("Der Ein-Datei-Build enthält vorzeitig geschlossene Script- oder Style-Blöcke.");
+}
+
+const finalScriptEnd = html.lastIndexOf("</script>");
+const finalJavaScript = html.slice(firstScriptEnd + 1, finalScriptEnd);
+new Script(finalJavaScript, { filename: outputName });
 
 await mkdir(releaseDirectory, { recursive: true });
 await writeFile(outputPath, html, "utf8");
