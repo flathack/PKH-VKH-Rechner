@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import test from "node:test";
@@ -113,16 +113,22 @@ test("verwendet das Manifest als einzige Quelle für den Rechtsstand", async () 
   assert.deepEqual(LEGAL_DATA, legalData);
   assert.deepEqual(ALLOWANCE_SETS, legalData.allowanceSets);
 
-  const productionFiles = await Promise.all([
+  const [lawSource, pageSource, layoutSource, standaloneSource] = await Promise.all([
     readFile(new URL("../app/pkh-law.mjs", import.meta.url), "utf8"),
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
     readFile(new URL("../standalone/index.html", import.meta.url), "utf8"),
   ]);
-  const duplicatedLegalState = /PKHB 2026|BGBl\. 2025 I Nr\. 360|60_000|600,00|300,00|48 Monatsraten|Ratenrechner 2026/;
+  const productionFiles = [lawSource, pageSource, layoutSource, standaloneSource];
+  const duplicatedLegalState = /PKHB 2026|BGBl\. 2025 I Nr\. 360|60_000|600,00|300,00|48\s+(?:Monats)?raten|\*\s*48|Ratenrechner 2026/i;
+  for (const duplicate of ["48 Raten", "48 Monatsraten", "monthlyRate * 48"]) {
+    assert.match(duplicate, duplicatedLegalState);
+  }
   for (const source of productionFiles) {
     assert.doesNotMatch(source, duplicatedLegalState);
   }
+  assert.match(pageSource, /Maximalbetrag bei \{monthlyRate\.maximumInstallments\} Raten/);
+  assert.match(pageSource, /calculation\.monthlyRate \* monthlyRate\.maximumInstallments/);
 });
 
 test("leitet die Ratenparameter aus dem Manifest ab", () => {
@@ -303,6 +309,25 @@ test("stellt einen automatischen Single-HTML-Release bereit", async () => {
   assert.match(releaseWorkflow, /id:\s*artifacts/);
   assert.match(releaseWorkflow, /steps\.artifacts\.outputs\.html/);
   assert.match(releaseWorkflow, /steps\.artifacts\.outputs\.checksum/);
+  assert.match(releaseWorkflow, /ref:\s*refs\/tags\/\$\{\{\s*steps\.release\.outputs\.tag\s*\}\}/);
+  assert.match(releaseWorkflow, /GITHUB_EVENT_NAME/);
+  assert.doesNotMatch(releaseWorkflow, /GITHUB_REF_TYPE/);
+  assert.match(releaseWorkflow, /persist-credentials:\s*false/);
+  assert.match(releaseWorkflow, /group:\s*single-html-release/);
+  assert.equal(releaseWorkflow.match(/node scripts\/verify-release-tag\.mjs/g)?.length, 2);
+  assert.match(releaseWorkflow, /id:\s*verification/);
+  assert.match(releaseWorkflow, /steps\.verification\.outputs\.sha/);
+  assert.ok(releaseWorkflow.lastIndexOf("node scripts/verify-release-tag.mjs") < releaseWorkflow.indexOf("GH_TOKEN:"));
+  const publishStep = releaseWorkflow.slice(releaseWorkflow.indexOf("- name: Create or update GitHub release"));
+  const inlineTagVerification = publishStep.indexOf("verify_remote_tag");
+  const releaseOperation = publishStep.indexOf("gh release");
+  assert.ok(inlineTagVerification >= 0 && inlineTagVerification < releaseOperation);
+  assert.ok(publishStep.lastIndexOf("verify_remote_tag") > releaseOperation);
+  assert.match(publishStep, /--target "\$RELEASE_SHA"/);
+  assert.doesNotMatch(publishStep, /GITHUB_SHA/);
+  assert.match(publishStep, /gh release delete-asset/);
+  assert.match(publishStep, /gh release delete "\$RELEASE_TAG"/);
+  assert.match(releaseWorkflow, /--verify-tag/);
   assert.doesNotMatch(releaseWorkflow, /PKH-VKH-Rechner-2026\.html/);
   assert.match(buildScript, /legal-data\.json/);
   assert.match(buildScript, /legalData\.calculationYear/);
@@ -311,6 +336,88 @@ test("stellt einen automatischen Single-HTML-Release bereit", async () => {
   assert.match(buildScript, /createHash\("sha256"\)/);
   assert.match(readme, /github\.com\/flathack\/PKH-VKH-Rechner\/releases\/latest/);
   assert.doesNotMatch(readme, /PKH-VKH-Rechner-2026\.html|PKHB 2026|BGBl\. 2025 I Nr\. 360/);
+});
+
+test("verifiziert einen kanonischen Release-Tag gegen Checkout und Paketversion", async () => {
+  const tempDirectory = await mkdtemp(join(tmpdir(), "pkh-vkh-release-tag-test-"));
+  const remoteDirectory = join(tempDirectory, "remote.git");
+  const repositoryDirectory = join(tempDirectory, "repository");
+  const verificationScript = join(PROJECT_ROOT, "scripts", "verify-release-tag.mjs");
+  const releaseEnvironment = { ...process.env, RELEASE_TAG: "v1.2.3" };
+  const git = (...args) => execFileAsync("git", args, { cwd: repositoryDirectory });
+  const assertVerificationRejects = (env, expectedError) => assert.rejects(
+    execFileAsync(process.execPath, [verificationScript], { cwd: repositoryDirectory, env }),
+    (error) => {
+      assert.match(String(error.stderr), expectedError);
+      return true;
+    },
+  );
+
+  try {
+    await execFileAsync("git", ["init", "--bare", remoteDirectory]);
+    await execFileAsync("git", ["init", repositoryDirectory]);
+    await git("config", "user.name", "Release Test");
+    await git("config", "user.email", "release-test@example.invalid");
+    await git("remote", "add", "origin", remoteDirectory);
+    await writeFile(join(repositoryDirectory, "package.json"), '{"version":"1.2.3"}\n');
+    await writeFile(join(repositoryDirectory, "marker.txt"), "tag commit\n");
+    await git("add", "package.json", "marker.txt");
+    await git("commit", "-m", "tag commit");
+    const { stdout: taggedCommit } = await git("rev-parse", "HEAD");
+    await git("tag", "-a", "v1.2.3", "-m", "v1.2.3");
+    await git("tag", "-a", "v9.9.9", "-m", "v9.9.9");
+    await git("push", "origin", "HEAD:refs/heads/main", "refs/tags/v1.2.3", "refs/tags/v9.9.9");
+
+    await git("switch", "-c", "v1.2.3");
+    await assertVerificationRejects(releaseEnvironment, /nicht detached/);
+
+    await writeFile(join(repositoryDirectory, "marker.txt"), "same-named branch\n");
+    await git("add", "marker.txt");
+    await git("commit", "-m", "same-named branch");
+    const { stdout: differentDispatchCommit } = await git("rev-parse", "HEAD");
+    await git("push", "origin", "HEAD:refs/heads/v1.2.3");
+    await git("checkout", "--detach", "HEAD");
+
+    await assertVerificationRejects(releaseEnvironment, /entspricht nicht dem Tag-Ziel/);
+
+    await git("checkout", "--detach", "refs/tags/v1.2.3");
+    const githubOutput = join(tempDirectory, "github-output");
+    await assert.doesNotReject(execFileAsync(process.execPath, [verificationScript], {
+      cwd: repositoryDirectory,
+      env: {
+        ...releaseEnvironment,
+        GITHUB_OUTPUT: githubOutput,
+        GITHUB_SHA: differentDispatchCommit.trim(),
+      },
+    }));
+    assert.equal((await readFile(githubOutput, "utf8")).trim(), `sha=${taggedCommit.trim()}`);
+
+    await writeFile(join(repositoryDirectory, "package.json"), '{"version":"1.2.4"}\n');
+    await git("add", "package.json");
+    await git("commit", "-m", "lightweight tag commit");
+    await git("tag", "v1.2.4");
+    await git("push", "origin", "refs/tags/v1.2.4");
+    await git("checkout", "--detach", "refs/tags/v1.2.4");
+    await assertVerificationRejects(
+      { ...process.env, RELEASE_TAG: "v1.2.4" },
+      /muss annotiert sein/,
+    );
+    await git("checkout", "--detach", "refs/tags/v1.2.3");
+
+    await writeFile(join(repositoryDirectory, "marker.txt"), "dirty tracked checkout\n");
+    await assertVerificationRejects(releaseEnvironment, /getrackte Änderungen/);
+    await git("checkout", "--", "marker.txt");
+
+    await assertVerificationRejects(
+      { ...process.env, RELEASE_TAG: "v9.9.9" },
+      /Paketversion und Release-Tag stimmen nicht überein/,
+    );
+
+    await execFileAsync("git", ["--git-dir", remoteDirectory, "update-ref", "refs/tags/v1.2.3", differentDispatchCommit.trim()]);
+    await assertVerificationRejects(releaseEnvironment, /Lokaler und kanonischer Remote-Tag stimmen nicht überein/);
+  } finally {
+    await rm(tempDirectory, { recursive: true, force: true });
+  }
 });
 
 test("erzeugt maschinenlesbare Release-Pfade mit gültiger SHA-256-Prüfsumme", async () => {

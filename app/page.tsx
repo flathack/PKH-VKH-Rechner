@@ -477,8 +477,8 @@ export default function Home() {
           </div>
 
           <div className="maximum">
-            <span>Maximalbetrag bei 48 Raten</span>
-            <strong>{euro.format(calculation.monthlyRate * 48)}</strong>
+            <span>Maximalbetrag bei {monthlyRate.maximumInstallments} Raten</span>
+            <strong>{euro.format(calculation.monthlyRate * monthlyRate.maximumInstallments)}</strong>
           </div>
           <div className="action-row">
             <button type="button" className="primary-button" onClick={() => window.print()}>Drucken</button>

@@ -13,6 +13,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: single-html-release
+  cancel-in-progress: false
+
 jobs:
   build-and-release:
     runs-on: ubuntu-latest
@@ -23,10 +27,10 @@ jobs:
         env:
           INPUT_TAG: ${{ inputs.tag }}
         run: |
-          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
-            tag="${GITHUB_REF_NAME}"
-          else
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
             tag="${INPUT_TAG}"
+          else
+            tag="${GITHUB_REF_NAME}"
           fi
           if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo "Ungültiger Release-Tag: $tag" >&2
@@ -37,13 +41,21 @@ jobs:
       - name: Checkout release tag
         uses: actions/checkout@v4
         with:
-          ref: ${{ steps.release.outputs.tag }}
+          ref: refs/tags/${{ steps.release.outputs.tag }}
+          fetch-depth: 0
+          persist-credentials: false
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
+
+      - name: Verify canonical release tag
+        id: verification
+        env:
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+        run: node scripts/verify-release-tag.mjs
 
       - name: Install dependencies
         run: npm ci
@@ -55,11 +67,17 @@ jobs:
         id: artifacts
         run: npm run build:single
 
+      - name: Reverify canonical release tag
+        env:
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+        run: node scripts/verify-release-tag.mjs
+
       - name: Create or update GitHub release
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ steps.release.outputs.tag }}
+          RELEASE_SHA: ${{ steps.verification.outputs.sha }}
           HTML_ASSET: ${{ steps.artifacts.outputs.html }}
           CHECKSUM_ASSET: ${{ steps.artifacts.outputs.checksum }}
         run: |
@@ -70,11 +88,41 @@ jobs:
               exit 1
             fi
           done
+
+          verify_remote_tag() {
+            local local_tag_object remote_tag_object tag_commit tag_type
+            local_tag_object="$(git rev-parse "refs/tags/$RELEASE_TAG")" || return 1
+            remote_tag_object="$(git ls-remote --exit-code --refs origin "refs/tags/$RELEASE_TAG" | cut -f1)" || return 1
+            tag_commit="$(git rev-parse "refs/tags/$RELEASE_TAG^{}")" || return 1
+            tag_type="$(git cat-file -t "refs/tags/$RELEASE_TAG")" || return 1
+            if [[ "$tag_type" != "tag" || "$local_tag_object" != "$remote_tag_object" || "$tag_commit" != "$RELEASE_SHA" ]]; then
+              echo "Remote-Tag, annotiertes Tagobjekt und Release-Commit stimmen nicht überein." >&2
+              return 1
+            fi
+          }
+
+          verify_remote_tag
+          release_existed=false
           if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            release_existed=true
             gh release upload "$RELEASE_TAG" "${assets[@]}" --clobber --repo "$GITHUB_REPOSITORY"
           else
             gh release create "$RELEASE_TAG" "${assets[@]}" \
               --repo "$GITHUB_REPOSITORY" \
               --title "PKH · VKH Ratenrechner $RELEASE_TAG" \
+              --target "$RELEASE_SHA" \
+              --verify-tag \
               --generate-notes
+          fi
+
+          if ! verify_remote_tag; then
+            echo "Der Remote-Tag änderte sich während der Veröffentlichung; bereinige den partiellen Release." >&2
+            if [[ "$release_existed" == "true" ]]; then
+              for asset in "${assets[@]}"; do
+                gh release delete-asset "$RELEASE_TAG" "$(basename "$asset")" --yes --repo "$GITHUB_REPOSITORY" || true
+              done
+            else
+              gh release delete "$RELEASE_TAG" --yes --repo "$GITHUB_REPOSITORY" || true
+            fi
+            exit 1
           fi
