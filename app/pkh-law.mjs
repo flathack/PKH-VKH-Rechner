@@ -1,13 +1,7 @@
-/**
- * Freibeträge ab 01.01.2026 gemäß PKHB 2026 (BGBl. 2025 I Nr. 360).
- * Grundlage sind § 115 Abs. 1 ZPO und die Regelbedarfsstufen 2026.
- */
-export const ALLOWANCE_SETS = {
-  bund: { label: "Übriges Bundesgebiet", employed: 282, party: 619, adult: 496, teen: 518, child: 429, youngChild: 393 },
-  ffb: { label: "Landkreis Fürstenfeldbruck", employed: 295, party: 649, adult: 520, teen: 540, child: 443, youngChild: 408 },
-  muenchen: { label: "Landeshauptstadt München", employed: 296, party: 650, adult: 519, teen: 541, child: 446, youngChild: 407 },
-  landkreisMuenchen: { label: "Landkreis München", employed: 290, party: 637, adult: 510, teen: 534, child: 441, youngChild: 404 },
-};
+import legalData from "./legal-data.json" with { type: "json" };
+
+export const LEGAL_DATA = legalData;
+export const ALLOWANCE_SETS = LEGAL_DATA.allowanceSets;
 
 export function toCents(value) {
   return Math.round((Number(value) || 0) * 100);
@@ -20,10 +14,12 @@ export function fromCents(cents) {
 /** Monatsrate nach § 115 Abs. 2 ZPO auf Basis ganzzahliger Centwerte. */
 export function calculateMonthlyRateFromCents(disposableIncomeCents) {
   const usableCents = Math.max(0, Math.round(Number(disposableIncomeCents) || 0));
-  const roundedRate = usableCents > 60_000
-    ? 300 + Math.floor((usableCents - 60_000) / 100)
-    : Math.floor(usableCents / 200);
-  return roundedRate < 10 ? 0 : roundedRate;
+  const { incomeThreshold, thresholdRate, incomeDivisor, minimumRate } = LEGAL_DATA.monthlyRate;
+  const thresholdCents = toCents(incomeThreshold);
+  const roundedRate = usableCents > thresholdCents
+    ? thresholdRate + Math.floor((usableCents - thresholdCents) / 100)
+    : Math.floor(usableCents / (incomeDivisor * 100));
+  return roundedRate < minimumRate ? 0 : roundedRate;
 }
 
 export function calculateMonthlyRate(disposableIncome) {

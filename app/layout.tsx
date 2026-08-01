@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import legalData from "./legal-data.json";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -13,7 +14,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "PKH · VKH Ratenrechner 2026",
+  title: `PKH · VKH Ratenrechner ${legalData.calculationYear}`,
   description: "Lokale Ratenberechnung für Prozess- und Verfahrenskostenhilfe nach § 115 ZPO.",
 };
 

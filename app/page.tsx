@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ALLOWANCE_SETS as allowanceSets, calculateDependentAllowance, calculatePkh } from "./pkh-law.mjs";
+import { ALLOWANCE_SETS as allowanceSets, LEGAL_DATA, calculateDependentAllowance, calculatePkh } from "./pkh-law.mjs";
 
 type LocationKey = "bund" | "ffb" | "muenchen" | "landkreisMuenchen";
 type DependentKind = "adult" | "adultEmployed" | "teen" | "teenEmployed" | "child" | "youngChild";
@@ -38,6 +38,8 @@ const compactEuro = new Intl.NumberFormat("de-DE", {
   currency: "EUR",
   maximumFractionDigits: 0,
 });
+
+const { calculationYear, legalBasis, monthlyRate, sources } = LEGAL_DATA;
 
 function MoneyInput({
   id,
@@ -189,7 +191,7 @@ export default function Home() {
 
       <section className="hero" id="top">
         <div>
-          <span className="eyebrow">Berechnungsjahr 2026</span>
+          <span className="eyebrow">Berechnungsjahr {calculationYear}</span>
           <h1>Monatsrate für Prozess- und Verfahrenskostenhilfe</h1>
           <p>
             Ermitteln Sie die voraussichtliche Rate nach § 115 ZPO. Die Berechnung erfolgt
@@ -199,7 +201,7 @@ export default function Home() {
         <div className="hero-law">
           <span>Rechtsgrundlage</span>
           <strong>§ 115 ZPO</strong>
-          <small>PKHB 2026 · BGBl. 2025 I Nr. 360</small>
+          <small>{legalBasis.shortName} · {legalBasis.citation}</small>
         </div>
       </section>
 
@@ -212,7 +214,7 @@ export default function Home() {
           <dl className="document-meta">
             <div><dt>Aktenzeichen</dt><dd>{caseNumber || "—"}</dd></div>
             <div><dt>Berechnungsdatum</dt><dd>{printDate}</dd></div>
-            <div><dt>Rechenstand</dt><dd>PKHB 2026</dd></div>
+            <div><dt>Rechenstand</dt><dd>{legalBasis.shortName}</dd></div>
           </dl>
         </header>
 
@@ -280,10 +282,12 @@ export default function Home() {
         <section className="document-explanation">
           <h2>Berechnungshinweis</h2>
           <p>
-            Bis zu einem einzusetzenden Einkommen von 600,00 € entspricht die Monatsrate der Hälfte des
-            einzusetzenden Einkommens. Bei einem höheren Betrag werden 300,00 € zuzüglich des 600,00 €
-            übersteigenden Teils angesetzt. Die Rate wird auf volle Euro abgerundet; Beträge unter 10,00 €
-            werden nicht festgesetzt. Es sind höchstens 48 Monatsraten aufzubringen.
+            Bis zu einem einzusetzenden Einkommen von {euro.format(monthlyRate.incomeThreshold)} entspricht
+            die Monatsrate einem Anteil von 1/{monthlyRate.incomeDivisor} des einzusetzenden Einkommens. Bei
+            einem höheren Betrag werden {euro.format(monthlyRate.thresholdRate)} zuzüglich des
+            {euro.format(monthlyRate.incomeThreshold)} übersteigenden Teils angesetzt. Die Rate wird auf volle
+            Euro abgerundet; Beträge unter {euro.format(monthlyRate.minimumRate)} werden nicht festgesetzt. Es
+            sind höchstens {monthlyRate.maximumInstallments} Monatsraten aufzubringen.
           </p>
         </section>
 
@@ -292,7 +296,7 @@ export default function Home() {
             Diese Berechnung dient der unverbindlichen Orientierung. Die abschließende Prüfung und
             Festsetzung obliegt dem zuständigen Gericht.
           </p>
-          <div><span>Rechtsgrundlage: § 115 ZPO</span><span>Freibeträge: PKHB 2026, BGBl. 2025 I Nr. 360</span></div>
+          <div><span>Rechtsgrundlage: § 115 ZPO</span><span>Freibeträge: {legalBasis.shortName}, {legalBasis.citation}</span></div>
         </footer>
       </article>
 
@@ -329,7 +333,7 @@ export default function Home() {
               <b>{compactEuro.format(allowanceSets[location].party)}</b>
             </div>
             <details className="legal-details">
-              <summary>Freibeträge 2026 für diesen Wohnsitz</summary>
+              <summary>Freibeträge {calculationYear} für diesen Wohnsitz</summary>
               <div className="allowance-table">
                 <div><span>Erwerbstätige Partei</span><strong>{compactEuro.format(allowanceSets[location].employed)}</strong></div>
                 <div><span>Partei / Ehe- oder Lebenspartner</span><strong>{compactEuro.format(allowanceSets[location].party)}</strong></div>
@@ -380,7 +384,7 @@ export default function Home() {
                       <strong>{euro.format(calculateDependentAllowance(person.kind, person.ownIncome, allowanceSets[location]))}</strong>
                       {person.kind === "adultEmployed" || person.kind === "teenEmployed" ? (
                         <small>Einkommen bereinigt um {compactEuro.format(allowanceSets[location].employed)}</small>
-                      ) : person.ownIncome > 0 ? <small>nach Einkommensanrechnung</small> : <small>PKHB 2026</small>}
+                      ) : person.ownIncome > 0 ? <small>nach Einkommensanrechnung</small> : <small>{legalBasis.shortName}</small>}
                     </div>
                     <button className="icon-button" type="button" aria-label={`Person ${index + 1} entfernen`} onClick={() => setDependents((current) => current.filter((item) => item.id !== person.id))}>×</button>
                   </div>
@@ -486,16 +490,16 @@ export default function Home() {
             Unverbindliche Orientierung. Die endgültige Prüfung und Festsetzung obliegt dem zuständigen Gericht.
           </p>
           <div className="law-links">
-            <a href="https://www.gesetze-im-internet.de/zpo/__115.html" target="_blank" rel="noreferrer">§ 115 ZPO</a>
-            <a href="https://www.gesetze-im-internet.de/pkhb_2026/----.html" target="_blank" rel="noreferrer">PKHB 2026</a>
-            <a href="https://www.gesetze-im-internet.de/sgb_12/__82.html" target="_blank" rel="noreferrer">§ 82 SGB XII</a>
+            <a href={sources.zpo115.url} target="_blank" rel="noreferrer">§ 115 ZPO</a>
+            <a href={sources.pkhb.url} target="_blank" rel="noreferrer">{legalBasis.shortName}</a>
+            <a href={sources.sgb12Section82.url} target="_blank" rel="noreferrer">§ 82 SGB XII</a>
           </div>
         </aside>
       </div>
 
       <footer>
         <div><strong>PKH · VKH Ratenrechner</strong><span>Lokale Berechnung ohne Datenübertragung</span></div>
-        <p>Rechenstand: 2026 · Freibeträge gemäß PKHB 2026</p>
+        <p>Rechenstand: {calculationYear} · Freibeträge gemäß {legalBasis.shortName}</p>
       </footer>
     </main>
   );

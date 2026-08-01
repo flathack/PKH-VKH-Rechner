@@ -1,0 +1,76 @@
+{
+  "schemaVersion": 1,
+  "jurisdiction": "DE",
+  "calculationYear": 2026,
+  "effectiveFrom": "2026-01-01",
+  "legalBasis": {
+    "title": "Prozesskostenhilfebekanntmachung 2026",
+    "shortName": "PKHB 2026",
+    "issuedOn": "2025-12-19",
+    "publishedOn": "2025-12-23",
+    "citation": "BGBl. 2025 I Nr. 360"
+  },
+  "sources": {
+    "federalGazette": {
+      "title": "BGBl. 2025 I Nr. 360",
+      "url": "https://www.recht.bund.de/eli/bund/bgbl-1/2025/360"
+    },
+    "pkhb": {
+      "title": "Prozesskostenhilfebekanntmachung 2026",
+      "url": "https://www.gesetze-im-internet.de/pkhb_2026/----.html"
+    },
+    "zpo115": {
+      "title": "§ 115 ZPO – Einsatz von Einkommen und Vermögen",
+      "url": "https://www.gesetze-im-internet.de/zpo/__115.html"
+    },
+    "sgb12Section82": {
+      "title": "§ 82 SGB XII – Begriff des Einkommens",
+      "url": "https://www.gesetze-im-internet.de/sgb_12/__82.html"
+    }
+  },
+  "allowanceSets": {
+    "bund": {
+      "label": "Übriges Bundesgebiet",
+      "employed": 282,
+      "party": 619,
+      "adult": 496,
+      "teen": 518,
+      "child": 429,
+      "youngChild": 393
+    },
+    "ffb": {
+      "label": "Landkreis Fürstenfeldbruck",
+      "employed": 295,
+      "party": 649,
+      "adult": 520,
+      "teen": 540,
+      "child": 443,
+      "youngChild": 408
+    },
+    "muenchen": {
+      "label": "Landeshauptstadt München",
+      "employed": 296,
+      "party": 650,
+      "adult": 519,
+      "teen": 541,
+      "child": 446,
+      "youngChild": 407
+    },
+    "landkreisMuenchen": {
+      "label": "Landkreis München",
+      "employed": 290,
+      "party": 637,
+      "adult": 510,
+      "teen": 534,
+      "child": 441,
+      "youngChild": 404
+    }
+  },
+  "monthlyRate": {
+    "incomeThreshold": 600,
+    "thresholdRate": 300,
+    "incomeDivisor": 2,
+    "minimumRate": 10,
+    "maximumInstallments": 48
+  }
+}

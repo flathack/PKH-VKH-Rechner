@@ -3,7 +3,7 @@
 **Online-Version:** https://flathack.github.io/PKH-VKH-Rechner/
 
 **Download als einzelne HTML-Datei:**
-https://github.com/flathack/PKH-VKH-Rechner/releases/latest/download/PKH-VKH-Rechner-2026.html
+https://github.com/flathack/PKH-VKH-Rechner/releases/latest
 
 Die heruntergeladene Datei kann direkt per Doppelklick im Browser geöffnet
 werden. Sie enthält den vollständigen Rechner und benötigt keine Installation
@@ -14,7 +14,7 @@ Prozess- und Verfahrenskostenhilfe nach § 115 ZPO.
 
 ## Funktionsumfang
 
-- Freibeträge der PKHB 2026 für Bund, Fürstenfeldbruck und München
+- Freibeträge des aktuell hinterlegten Rechtsstands für Bund, Fürstenfeldbruck und München
 - Einkünfte, Pflichtabzüge und Erwerbstätigenfreibetrag
 - Ehe-/Lebenspartner und weitere unterhaltene Personen
 - Wohnkostenaufteilung nach Einkommen oder Köpfen
@@ -27,12 +27,19 @@ Prozess- und Verfahrenskostenhilfe nach § 115 ZPO.
 - § 115 ZPO: einsetzbares Einkommen, Abzüge und Monatsraten
 - § 82 Abs. 2 SGB XII: Steuern, Sozialversicherung, angemessene Versicherungen und notwendige Erwerbskosten
 - § 21 SGB II und § 30 SGB XII: anerkannte Mehrbedarfe
-- PKHB 2026 (BGBl. 2025 I Nr. 360): bundesweite und regional erhöhte Freibeträge
-- RBSFV 2026: Regelbedarfsstufen 563 / 506 / 451 / 471 / 390 / 357 Euro
+- aktuelle Prozesskostenhilfebekanntmachung: bundesweite und regional erhöhte Freibeträge
 
-Bundesweite Freibeträge ab 1. Januar 2026: 282 Euro für Erwerbstätigkeit,
-619 Euro für Partei sowie Ehe-/Lebenspartner und – je nach Alter –
-496 / 518 / 429 / 393 Euro für weitere unterhaltsberechtigte Personen.
+Der maschinenlesbare Rechtsstand mit Gültigkeitsdatum, Fundstelle, amtlichen
+Quellen, Freibeträgen und Ratenparametern liegt zentral in
+[`app/legal-data.json`](app/legal-data.json). Die Anwendung zeigt den dort
+hinterlegten Rechenstand an.
+
+## Automatische Rechtsstandsaktualisierung
+
+Die Wartungsautomation prüft amtliche Quellen in Zeitfenstern rund um den
+1. Januar und 1. Juni. Sie veröffentlicht nur vollständig belegte Änderungen,
+die sämtliche Tests und Builds bestehen. Das fail-closed Verfahren ist in
+[`docs/legal-update-runbook.md`](docs/legal-update-runbook.md) beschrieben.
 
 ## Lokal starten
 

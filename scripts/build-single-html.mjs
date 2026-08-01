@@ -1,15 +1,17 @@
 import { createHash } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Script } from "node:vm";
 import { build } from "vite";
+import legalData from "../app/legal-data.json" with { type: "json" };
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = dirname(scriptDirectory);
 const buildDirectory = join(repositoryRoot, "single-dist");
 const releaseDirectory = join(repositoryRoot, "release");
-const outputName = "PKH-VKH-Rechner-2026.html";
+const outputName = `PKH-VKH-Rechner-${legalData.calculationYear}.html`;
+const relativeOutputPath = `release/${outputName}`;
 const outputPath = join(releaseDirectory, outputName);
 
 await build({
@@ -71,6 +73,14 @@ await writeFile(outputPath, html, "utf8");
 
 const digest = createHash("sha256").update(html, "utf8").digest("hex");
 await writeFile(`${outputPath}.sha256`, `${digest}  ${outputName}\n`, "utf8");
+
+if (process.env.GITHUB_OUTPUT) {
+  await appendFile(
+    process.env.GITHUB_OUTPUT,
+    `html=${relativeOutputPath}\nchecksum=${relativeOutputPath}.sha256\n`,
+    "utf8",
+  );
+}
 
 console.log(`Ein-Datei-Build erstellt: ${outputPath}`);
 console.log(`SHA-256: ${digest}`);

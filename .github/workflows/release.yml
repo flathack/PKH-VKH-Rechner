@@ -52,6 +52,7 @@ jobs:
         run: npm test
 
       - name: Build single HTML file
+        id: artifacts
         run: npm run build:single
 
       - name: Create or update GitHub release
@@ -59,11 +60,16 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ steps.release.outputs.tag }}
+          HTML_ASSET: ${{ steps.artifacts.outputs.html }}
+          CHECKSUM_ASSET: ${{ steps.artifacts.outputs.checksum }}
         run: |
-          assets=(
-            "release/PKH-VKH-Rechner-2026.html"
-            "release/PKH-VKH-Rechner-2026.html.sha256"
-          )
+          assets=("$HTML_ASSET" "$CHECKSUM_ASSET")
+          for asset in "${assets[@]}"; do
+            if [[ -z "$asset" || ! -f "$asset" ]]; then
+              echo "Release-Artefakt fehlt: $asset" >&2
+              exit 1
+            fi
+          done
           if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release upload "$RELEASE_TAG" "${assets[@]}" --clobber --repo "$GITHUB_REPOSITORY"
           else
