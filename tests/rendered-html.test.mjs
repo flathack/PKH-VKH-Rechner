@@ -18,6 +18,14 @@ import {
 } from "../app/pkh-law.mjs";
 
 const REQUIRED_ALLOWANCE_KEYS = ["employed", "party", "adult", "teen", "child", "youngChild"];
+const REQUIRED_DISCLAIMER_PATTERNS = [
+  /privates Hobbyprojekt eines Rechtspflegers/,
+  /kein offizielles Angebot eines Gerichts oder einer Behörde/,
+  /ersetzt keine Rechtsberatung/,
+  /kein Anspruch auf Richtigkeit, Vollständigkeit oder Aktualität/,
+  /Die Berechnung und ihr Ergebnis sind unverbindlich/,
+  /maßgeblich sind die geltenden Rechtsvorschriften und die Entscheidung des zuständigen Gerichts/i,
+];
 const OFFICIAL_SOURCE_HOSTS = new Set(["www.gesetze-im-internet.de", "www.recht.bund.de"]);
 const execFileAsync = promisify(execFile);
 const PROJECT_ROOT = fileURLToPath(new URL("../", import.meta.url));
@@ -52,6 +60,19 @@ function calculationInput(overrides = {}) {
     customDeductions: [],
     ...overrides,
   };
+}
+
+function assertDisclaimerStatements(output) {
+  const normalizedOutput = output.replace(/\s+/g, " ");
+  for (const pattern of REQUIRED_DISCLAIMER_PATTERNS) {
+    assert.match(normalizedOutput, pattern);
+  }
+}
+
+function getSectionByClass(html, className) {
+  const section = html.match(new RegExp(`<section class="${className}"[\\s\\S]*?</section>`));
+  assert.ok(section, `Abschnitt ${className} fehlt`);
+  return section[0];
 }
 
 async function render() {
@@ -162,23 +183,14 @@ test("liefert den lokalen PKH/VKH-Ratenrechner aus", async () => {
   assert.doesNotMatch(html, /codex-preview|react-loading-skeleton|Your site is taking shape/i);
 });
 
-test("kennzeichnet den Rechner als privates Hobbyprojekt ohne Rechtsberatung oder Richtigkeitsanspruch", async () => {
+test("kennzeichnet den Rechner als privates Hobbyprojekt mit unverbindlichem Ergebnis", async () => {
   const response = await render();
   const html = await response.text();
   const readme = await readFile(new URL("../README.md", import.meta.url), "utf8");
 
-  assert.match(html, /class="legal-disclaimer screen-disclaimer"/);
-  assert.match(html, /class="legal-disclaimer print-disclaimer"/);
-  assert.equal((html.match(/privates Hobbyprojekt eines Rechtspflegers/g) ?? []).length, 2);
-
-  for (const output of [html, readme]) {
-    const normalizedOutput = output.replace(/\s+/g, " ");
-    assert.match(normalizedOutput, /privates Hobbyprojekt eines Rechtspflegers/);
-    assert.match(normalizedOutput, /kein offizielles Angebot eines Gerichts oder einer Behörde/);
-    assert.match(normalizedOutput, /ersetzt keine Rechtsberatung/);
-    assert.match(normalizedOutput, /kein Anspruch auf Richtigkeit, Vollständigkeit oder Aktualität/);
-    assert.match(normalizedOutput, /maßgeblich sind die geltenden Rechtsvorschriften und die Entscheidung des zuständigen Gerichts/i);
-  }
+  assertDisclaimerStatements(getSectionByClass(html, "legal-disclaimer screen-disclaimer"));
+  assertDisclaimerStatements(getSectionByClass(html, "legal-disclaimer print-disclaimer"));
+  assertDisclaimerStatements(readme);
 });
 
 test("verwendet die amtlichen Freibeträge der PKHB 2026", () => {
@@ -468,11 +480,7 @@ test("erzeugt maschinenlesbare Release-Pfade mit gültiger SHA-256-Prüfsumme", 
     assert.equal(expectedFilename, basename(htmlPath));
     assert.equal(actualHash, expectedHash);
     assert.match(htmlText, /legal-disclaimer/);
-    assert.match(htmlText, /privates Hobbyprojekt eines Rechtspflegers/);
-    assert.match(htmlText, /kein offizielles Angebot eines Gerichts oder einer Behörde/);
-    assert.match(htmlText, /ersetzt keine Rechtsberatung/);
-    assert.match(htmlText, /kein Anspruch auf Richtigkeit, Vollständigkeit oder Aktualität/);
-    assert.match(htmlText, /unverbindlich/);
+    assertDisclaimerStatements(htmlText);
   } finally {
     await rm(tempDirectory, { recursive: true, force: true });
   }
