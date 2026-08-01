@@ -319,10 +319,19 @@ footer p { margin: 0; }
 }
 
 @media print {
-  @page { size: A4 portrait; margin: 18mm 20mm 17mm; }
+  @page { size: A4 portrait; margin: 0; }
+  html, body { margin: 0; padding: 0; }
   body { background: white; color: #111; font-family: Arial, Helvetica, sans-serif; font-size: 10pt; line-height: 1.4; }
   main > :not(.print-document) { display: none !important; }
-  .print-document { display: block; width: 100%; }
+  .print-document {
+    display: block;
+    width: 210mm;
+    min-height: 297mm;
+    box-sizing: border-box;
+    padding: 18mm 20mm 17mm;
+    -webkit-box-decoration-break: clone;
+    box-decoration-break: clone;
+  }
 
   .document-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 20mm; padding-bottom: 8mm; border-bottom: .6pt solid #5c6569; }
   .document-wordmark { display: flex; align-items: center; gap: 3mm; }

@@ -171,3 +171,9 @@ test("unterstützt mehrere beschriftete individuelle Abzüge", async () => {
   assert.match(page, /customDeductionTotal/);
   assert.match(page, /item\.description\.trim\(\)/);
 });
+
+test("unterdrückt Browser-Kopf- und Fußzeilen in der Druckfassung", async () => {
+  const css = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
+  assert.match(css, /@page\s*{[^}]*size:\s*A4 portrait;[^}]*margin:\s*0;/s);
+  assert.match(css, /\.print-document\s*{[^}]*width:\s*210mm;[^}]*min-height:\s*297mm;[^}]*padding:\s*18mm 20mm 17mm;/s);
+});
