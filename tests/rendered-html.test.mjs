@@ -22,6 +22,15 @@ const REMOVED_DISCLAIMER_PATTERN = /legal-disclaimer|screen-disclaimer|print-dis
 const OFFICIAL_SOURCE_HOSTS = new Set(["www.gesetze-im-internet.de", "www.recht.bund.de"]);
 const execFileAsync = promisify(execFile);
 const PROJECT_ROOT = fileURLToPath(new URL("../", import.meta.url));
+const PUBLIC_SITE_URL = "https://flathack.github.io/PKH-VKH-Rechner/";
+const PUBLIC_SITEMAP_URL = `${PUBLIC_SITE_URL}sitemap.xml`;
+const SEO_TITLE = `PKH-/VKH-Rechner ${legalData.calculationYear} – Prozesskostenhilfe nach § 115 ZPO`;
+const SEO_DESCRIPTION = `PKH- und VKH-Ratenrechner ${legalData.calculationYear} zur überschlägigen Berechnung der Monatsrate für Prozesskostenhilfe und Verfahrenskostenhilfe nach § 115 ZPO.`;
+const SEO_HEADING = `Prozesskostenhilfe- und Verfahrenskostenhilfe-Rechner ${legalData.calculationYear}`;
+
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
 
 function parseIsoDate(value, label) {
   assert.match(value, /^\d{4}-\d{2}-\d{2}$/, `${label}: ungültiges Format`);
@@ -146,7 +155,23 @@ test("liefert den lokalen PKH/VKH-Ratenrechner aus", async () => {
 
   const html = await response.text();
   assert.match(html, /<html lang="de">/i);
-  assert.match(html, /<title>PKH · VKH Ratenrechner 2026<\/title>/i);
+  assert.match(html, new RegExp(`<title>${escapeRegExp(SEO_TITLE)}<\\/title>`, "i"));
+  assert.equal((html.match(/rel="canonical"/gi) ?? []).length, 1);
+  assert.match(html, new RegExp(`<link[^>]+rel="canonical"[^>]+href="${escapeRegExp(PUBLIC_SITE_URL)}"`, "i"));
+  assert.equal((html.match(/rel="sitemap"/gi) ?? []).length, 1);
+  assert.match(html, new RegExp(`<link[^>]+rel="sitemap"[^>]+href="${escapeRegExp(PUBLIC_SITEMAP_URL)}"`, "i"));
+  assert.match(html, /<meta[^>]+name="robots"[^>]+content="index, follow"/i);
+  assert.match(html, /<meta[^>]+property="og:type"[^>]+content="website"/i);
+  assert.match(html, new RegExp(`<meta[^>]+property="og:url"[^>]+content="${escapeRegExp(PUBLIC_SITE_URL)}"`, "i"));
+  assert.match(html, /<meta[^>]+name="twitter:card"[^>]+content="summary"/i);
+
+  const structuredDataMatch = html.match(/<script[^>]+type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/i);
+  assert.ok(structuredDataMatch, "JSON-LD fehlt im öffentlichen SSR-Artefakt");
+  const structuredData = JSON.parse(structuredDataMatch[1]);
+  assert.equal(structuredData["@type"], "WebApplication");
+  assert.equal(structuredData.name, SEO_TITLE);
+  assert.equal(structuredData.url, PUBLIC_SITE_URL);
+  assert.equal(structuredData.description, SEO_DESCRIPTION);
   assert.match(html, /Monatsrate für Prozess- und Verfahrenskostenhilfe/);
   assert.match(html, /§ 115 ZPO/);
   assert.match(html, /Lokal &amp; datensparsam/);
@@ -161,6 +186,47 @@ test("liefert den lokalen PKH/VKH-Ratenrechner aus", async () => {
   assert.match(html, /Summe sämtlicher Abzüge/);
   assert.match(html, /Festzusetzende Monatsrate/);
   assert.doesNotMatch(html, /codex-preview|react-loading-skeleton|Your site is taking shape/i);
+});
+
+test("erzeugt eine statisch crawlbare und kanonische GitHub-Pages-Ausgabe", async () => {
+  await execFileAsync(process.platform === "win32" ? "npm.cmd" : "npm", ["run", "build:pages"], {
+    cwd: PROJECT_ROOT,
+    maxBuffer: 10 * 1024 * 1024,
+  });
+
+  const html = await readFile(new URL("../pages-dist/index.html", import.meta.url), "utf8");
+
+  assert.match(html, new RegExp(`<title>${escapeRegExp(SEO_TITLE)}<\\/title>`, "i"));
+  assert.match(html, new RegExp(`<meta[^>]+name="description"[^>]+content="${escapeRegExp(SEO_DESCRIPTION)}"`, "i"));
+  assert.match(html, new RegExp(`<h1>${escapeRegExp(SEO_HEADING)}<\\/h1>`, "i"));
+  assert.match(html, /Monatsrate für Prozess- und Verfahrenskostenhilfe nach § 115 ZPO überschlägig berechnen/);
+  assert.doesNotMatch(html, /<div id="root"><\/div>/i);
+
+  assert.equal((html.match(/rel="canonical"/gi) ?? []).length, 1);
+  assert.match(html, new RegExp(`<link[^>]+rel="canonical"[^>]+href="${escapeRegExp(PUBLIC_SITE_URL)}"`, "i"));
+  assert.match(html, /<meta[^>]+name="robots"[^>]+content="index, follow"/i);
+  assert.match(html, /<meta[^>]+property="og:type"[^>]+content="website"/i);
+  assert.match(html, new RegExp(`<meta[^>]+property="og:url"[^>]+content="${escapeRegExp(PUBLIC_SITE_URL)}"`, "i"));
+  assert.match(html, /<meta[^>]+property="og:locale"[^>]+content="de_DE"/i);
+  assert.match(html, /<meta[^>]+name="twitter:card"[^>]+content="summary"/i);
+  assert.match(html, new RegExp(`<link[^>]+rel="sitemap"[^>]+href="${escapeRegExp(PUBLIC_SITEMAP_URL)}"`, "i"));
+
+  const structuredDataMatch = html.match(/<script[^>]+type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/i);
+  assert.ok(structuredDataMatch, "JSON-LD fehlt");
+  const structuredData = JSON.parse(structuredDataMatch[1]);
+  assert.equal(structuredData["@context"], "https://schema.org");
+  assert.equal(structuredData["@type"], "WebApplication");
+  assert.equal(structuredData.name, SEO_TITLE);
+  assert.equal(structuredData.url, PUBLIC_SITE_URL);
+  assert.equal(structuredData.description, SEO_DESCRIPTION);
+  assert.equal(structuredData.inLanguage, "de-DE");
+  assert.equal(structuredData.isAccessibleForFree, true);
+
+  const sitemap = await readFile(new URL("../pages-dist/sitemap.xml", import.meta.url), "utf8");
+  assert.match(sitemap, /^<\?xml version="1\.0" encoding="UTF-8"\?>/);
+  assert.equal((sitemap.match(/<url>/g) ?? []).length, 1);
+  assert.match(sitemap, new RegExp(`<loc>${escapeRegExp(PUBLIC_SITE_URL)}<\\/loc>`));
+  assert.doesNotMatch(`${html}\n${sitemap}`, /__SEO_[A-Z_]+__/);
 });
 
 test("enthält keinen rechtlichen Disclaimer mehr", async () => {
@@ -460,6 +526,9 @@ test("erzeugt maschinenlesbare Release-Pfade mit gültiger SHA-256-Prüfsumme", 
     assert.equal(expectedFilename, basename(htmlPath));
     assert.equal(actualHash, expectedHash);
     assert.doesNotMatch(htmlText.replace(/\s+/g, " "), REMOVED_DISCLAIMER_PATTERN);
+    assert.match(htmlText, new RegExp(`<title>${escapeRegExp(SEO_TITLE)}<\\/title>`, "i"));
+    assert.match(htmlText, new RegExp(`<h1>${escapeRegExp(SEO_HEADING)}<\\/h1>`, "i"));
+    assert.doesNotMatch(htmlText, /rel="(?:canonical|sitemap)"|application\/ld\+json/i);
   } finally {
     await rm(tempDirectory, { recursive: true, force: true });
   }
