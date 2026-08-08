@@ -298,7 +298,7 @@ test("berechnet und rundet Monatsraten nach § 115 Abs. 2 ZPO", () => {
 test("zeigt den individuellen Freibetrag hinzugefügter Personen an", async () => {
   const page = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
   assert.match(page, /className="dependent-allowance"/);
-  assert.match(page, /calculateDependentAllowance\(person\.kind, person\.ownIncome, allowanceSets\[location\]\)/);
+  assert.match(page, /calculateDependentDeduction\(person, allowanceSets\[location\]\)/);
   assert.match(page, /nach Einkommensanrechnung/);
   assert.match(page, /0–5 Jahre/);
   assert.match(page, /6–13 Jahre/);
@@ -309,6 +309,18 @@ test("zeigt den individuellen Freibetrag hinzugefügter Personen an", async () =
   assert.doesNotMatch(page, /0–6 Jahre|7–14 Jahre|15–17 Jahre/);
 });
 
+test("bietet Unterhaltszahlungen je Person als Alternative zum Freibetrag an", async () => {
+  const page = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
+
+  assert.match(page, /deductionMode:\s*"allowance"/);
+  assert.match(page, /maintenancePayment:\s*0/);
+  assert.match(page, /Freibetrag verwenden/);
+  assert.match(page, /Unterhaltszahlung verwenden/);
+  assert.match(page, /Monatliche Unterhaltszahlung/);
+  assert.match(page, /calculateDependentDeduction\(person, allowanceSets\[location\]\)/);
+  assert.match(page, /person\.deductionMode === "maintenance" \? "Unterhaltszahlung" : "Freibetrag"/);
+});
+
 test("berücksichtigt Erwerbstätigkeit bei volljährigen unterhaltenen Personen", () => {
   const allowances = ALLOWANCE_SETS.bund;
   assert.equal(calculateDependentAllowance("adult", 200, allowances), 296);
@@ -317,6 +329,33 @@ test("berücksichtigt Erwerbstätigkeit bei volljährigen unterhaltenen Personen
   assert.equal(calculateDependentAllowance("adultEmployed", 1_000, allowances), 0);
   assert.equal(calculateDependentAllowance("teen", 600, allowances), 0);
   assert.equal(calculateDependentAllowance("teenEmployed", 600, allowances), 200);
+});
+
+test("setzt die gewählte Unterhaltszahlung statt des Personenfreibetrags an", () => {
+  const withAllowance = calculatePkh(calculationInput({
+    netIncome: 2_000,
+    dependents: [{
+      kind: "adult",
+      ownIncome: 0,
+      deductionMode: "allowance",
+      maintenancePayment: 300,
+    }],
+  }));
+  const withMaintenancePayment = calculatePkh(calculationInput({
+    netIncome: 2_000,
+    dependents: [{
+      kind: "adult",
+      ownIncome: 0,
+      deductionMode: "maintenance",
+      maintenancePayment: 300,
+    }],
+  }));
+
+  assert.equal(withAllowance.dependentAllowance, 496);
+  assert.equal(withAllowance.disposableIncome, 885);
+  assert.equal(withMaintenancePayment.dependentAllowance, 300);
+  assert.equal(withMaintenancePayment.disposableIncome, 1_081);
+  assert.equal(withMaintenancePayment.monthlyRate, 781);
 });
 
 test("bereinigt Einkommen einer erwerbstätigen Partnerperson", () => {

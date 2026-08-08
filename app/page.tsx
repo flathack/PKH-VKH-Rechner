@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ALLOWANCE_SETS as allowanceSets, LEGAL_DATA, calculateDependentAllowance, calculatePkh } from "./pkh-law.mjs";
+import { ALLOWANCE_SETS as allowanceSets, LEGAL_DATA, calculateDependentDeduction, calculatePkh } from "./pkh-law.mjs";
 
 type LocationKey = "bund" | "ffb" | "muenchen" | "landkreisMuenchen";
 type DependentKind = "adult" | "adultEmployed" | "teen" | "teenEmployed" | "child" | "youngChild";
@@ -10,6 +10,8 @@ type Dependent = {
   id: number;
   kind: DependentKind;
   ownIncome: number;
+  deductionMode: "allowance" | "maintenance";
+  maintenancePayment: number;
 };
 
 type CustomDeduction = {
@@ -132,7 +134,13 @@ export default function Home() {
   }), [location, netIncome, otherIncome, annualPayments, mandatoryDeductions, employed, spouse, spouseEmployed, spouseIncome, dependents, warmRent, housingMode, otherHouseholdIncome, householdPeople, insuranceAndWork, additionalMaintenance, additionalNeeds, specialBurdens, customDeductions]);
 
   const addDependent = () => {
-    setDependents((current) => [...current, { id: Date.now(), kind: "youngChild", ownIncome: 0 }]);
+    setDependents((current) => [...current, {
+      id: Date.now(),
+      kind: "youngChild",
+      ownIncome: 0,
+      deductionMode: "allowance",
+      maintenancePayment: 0,
+    }]);
   };
 
   const updateDependent = (id: number, patch: Partial<Dependent>) => {
@@ -247,8 +255,8 @@ export default function Home() {
               {spouse ? <tr><th>Freibetrag der Ehe-/Lebenspartnerperson{spouseEmployed ? " (erwerbstätig)" : ""} nach Einkommensanrechnung</th><td>− {euro.format(calculation.spouseAllowance)}</td></tr> : null}
               {dependents.map((person, index) => (
                 <tr key={person.id}>
-                  <th>Unterhaltene Person {index + 1}: {dependentLabels[person.kind]}</th>
-                  <td>− {euro.format(calculateDependentAllowance(person.kind, person.ownIncome, allowanceSets[location]))}</td>
+                  <th>{person.deductionMode === "maintenance" ? "Unterhaltszahlung" : "Freibetrag"} für unterhaltene Person {index + 1}: {dependentLabels[person.kind]}</th>
+                  <td>− {euro.format(calculateDependentDeduction(person, allowanceSets[location]))}</td>
                 </tr>
               ))}
               <tr><th>Berücksichtigter Anteil der Unterkunft und Heizung</th><td>− {euro.format(calculation.housingShare)}</td></tr>
@@ -323,7 +331,7 @@ export default function Home() {
           </section>
 
           <section className="form-card">
-            <SectionHeader number="02" title="Freibeträge" subtitle="Partei und gesetzlich unterhaltene Personen" />
+            <SectionHeader number="02" title="Freibeträge und Unterhalt" subtitle="Partei und gesetzlich unterhaltene Personen" />
             <div className="allowance-line allowance-highlight">
               <div><strong>Freibetrag der Partei</strong><small>{allowanceSets[location].label}</small></div>
               <b>{compactEuro.format(allowanceSets[location].party)}</b>
@@ -374,11 +382,24 @@ export default function Home() {
                         {Object.entries(dependentLabels).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
                       </select>
                     </label>
-                    <MoneyInput id={`dependent-${person.id}`} label="Eigenes Einkommen" value={person.ownIncome} onChange={(value) => updateDependent(person.id, { ownIncome: value })} />
+                    <label className="field">
+                      <span className="field-label">Ansatz</span>
+                      <select value={person.deductionMode} onChange={(event) => updateDependent(person.id, { deductionMode: event.target.value as Dependent["deductionMode"] })}>
+                        <option value="allowance">Freibetrag verwenden</option>
+                        <option value="maintenance">Unterhaltszahlung verwenden</option>
+                      </select>
+                    </label>
+                    {person.deductionMode === "maintenance" ? (
+                      <MoneyInput id={`dependent-maintenance-${person.id}`} label="Monatliche Unterhaltszahlung" value={person.maintenancePayment} onChange={(value) => updateDependent(person.id, { maintenancePayment: value })} />
+                    ) : (
+                      <MoneyInput id={`dependent-income-${person.id}`} label="Eigenes Einkommen" value={person.ownIncome} onChange={(value) => updateDependent(person.id, { ownIncome: value })} />
+                    )}
                     <div className="dependent-allowance" aria-live="polite">
-                      <span>Freibetrag</span>
-                      <strong>{euro.format(calculateDependentAllowance(person.kind, person.ownIncome, allowanceSets[location]))}</strong>
-                      {person.kind === "adultEmployed" || person.kind === "teenEmployed" ? (
+                      <span>{person.deductionMode === "maintenance" ? "Unterhaltszahlung" : "Freibetrag"}</span>
+                      <strong>{euro.format(calculateDependentDeduction(person, allowanceSets[location]))}</strong>
+                      {person.deductionMode === "maintenance" ? (
+                        <small>tatsächlich gezahlter Betrag</small>
+                      ) : person.kind === "adultEmployed" || person.kind === "teenEmployed" ? (
                         <small>Einkommen bereinigt um {compactEuro.format(allowanceSets[location].employed)}</small>
                       ) : person.ownIncome > 0 ? <small>nach Einkommensanrechnung</small> : <small>{legalBasis.shortName}</small>}
                     </div>
@@ -466,7 +487,7 @@ export default function Home() {
           <div className="breakdown">
             <div><span>Monatliche Einkünfte</span><strong>{euro.format(calculation.grossMonthlyIncome)}</strong></div>
             <div><span>Pflichtabzüge</span><strong>− {euro.format(mandatoryDeductions)}</strong></div>
-            <div><span>Freibeträge</span><strong>− {euro.format(calculation.totalAllowances)}</strong></div>
+            <div><span>Freibeträge / Unterhalt</span><strong>− {euro.format(calculation.totalAllowances)}</strong></div>
             <div><span>Unterkunftsanteil</span><strong>− {euro.format(calculation.housingShare)}</strong></div>
             <div><span>Weitere Abzüge</span><strong>− {euro.format(calculation.furtherDeductions)}</strong></div>
             <div className="disposable"><span>Einzusetzendes Einkommen</span><strong>{euro.format(Math.max(0, calculation.disposableIncome))}</strong></div>

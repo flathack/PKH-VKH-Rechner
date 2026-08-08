@@ -44,6 +44,17 @@ export function calculateDependentAllowance(kind, ownIncome, allowances) {
   return fromCents(calculateDependentAllowanceCents(kind, toCents(ownIncome), allowances));
 }
 
+export function calculateDependentDeductionCents(person, allowances) {
+  if (person.deductionMode === "maintenance") {
+    return Math.max(0, toCents(person.maintenancePayment));
+  }
+  return calculateDependentAllowanceCents(person.kind, toCents(person.ownIncome), allowances);
+}
+
+export function calculateDependentDeduction(person, allowances) {
+  return fromCents(calculateDependentDeductionCents(person, allowances));
+}
+
 export function calculateSpouseAllowanceCents(ownIncomeCents, employed, allowances) {
   const employmentAllowanceCents = employed ? toCents(allowances.employed) : 0;
   const chargeableIncomeCents = Math.max(0, ownIncomeCents - employmentAllowanceCents);
@@ -73,7 +84,7 @@ export function calculatePkh(input) {
     ? calculateSpouseAllowanceCents(toCents(input.spouseIncome), input.spouseEmployed, allowances)
     : 0;
   const dependentAllowanceCents = input.dependents.reduce(
-    (sum, person) => sum + calculateDependentAllowanceCents(person.kind, toCents(person.ownIncome), allowances),
+    (sum, person) => sum + calculateDependentDeductionCents(person, allowances),
     0,
   );
 
