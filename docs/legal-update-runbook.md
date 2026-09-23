@@ -10,7 +10,9 @@ Dieses Verfahren aktualisiert den PKH/VKH-Rechner nur auf Grundlage eines vollst
 - unmittelbar verwendete Verweisnormen, soweit sich daraus die Berechnung ändert,
 - Berechnungsjahr, Gültigkeitsbeginn, Fundstelle, Quell-URLs, Tests, UI und Release-Artefakt.
 
-`app/legal-data.json` ist die einzige maschinenlesbare Quelle des in der App verwendeten Rechtsstands.
+`app/legal-data.json` ist die maschinenlesbare Quelle des aktuellen Rechtsstands.
+`app/legal-history.json` enthält unveränderliche, amtlich geprüfte frühere
+Jahrgänge für Berechnungen nach dem Bewilligungsdatum.
 
 ## Zeitfenster richtig einordnen
 
@@ -45,7 +47,7 @@ Sekundärquellen, Such-Snippets, Kanzlei-Blogs und Rechner anderer Anbieter dür
    - Änderungsgesetze mit Treffern für § 115 ZPO oder unmittelbar verwendete Verweisnormen.
 4. Den konsolidierten Wortlaut und die Fußnoten von § 115 ZPO vergleichen.
 5. Inkrafttretensregel des verkündeten Dokuments lesen; nicht aus Titel, Veröffentlichungsdatum oder Such-Snippet ableiten.
-6. Liegt der Gültigkeitsbeginn in der Zukunft, den Kandidaten nur prüfen und noch nicht veröffentlichen. Da die App genau einen aktiven Wertesatz führt, darf das Produktionsmanifest frühestens am Gültigkeitstag ersetzt werden.
+6. Liegt der Gültigkeitsbeginn in der Zukunft, den Kandidaten nur prüfen und noch nicht veröffentlichen. Das aktuelle Produktionsmanifest darf frühestens am Gültigkeitstag ersetzt werden.
 7. Bei regionalen Beträgen jede im Manifest geführte Region ausdrücklich prüfen.
 8. Quellen-URLs direkt abrufen. Ein Suchergebnis ohne abrufbaren Regelungstext gilt als unvollständig.
 
@@ -88,6 +90,7 @@ Zusätzlich ist rechnerisch zu prüfen, ob die veröffentlichten Beträge zu den
 
 Normalfall einer neuen PKHB:
 
+- `app/legal-history.json`: Vor dem Ersetzen den bisherigen vollständigen Wertesatz mit Gültigkeitsende archivieren und den historischen Datumswechsel testen.
 - `app/legal-data.json`,
 - der gepinnte Rechtswert-Test in `tests/rendered-html.test.mjs`,
 - `package.json` und `package-lock.json` für die Patchversion.

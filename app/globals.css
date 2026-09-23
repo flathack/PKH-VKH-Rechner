@@ -169,6 +169,11 @@ button { cursor: pointer; }
 .section-heading p { margin: 3px 0 0; color: var(--muted); font-size: 13px; }
 
 .field-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+.entry-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; padding: 14px; margin: 10px 0; border: 1px solid var(--line); border-radius: 10px; }
+.evidence-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; padding: 12px; }
+.entry-grid .icon-button { justify-self: end; }
+.validation-note { color: var(--danger); font-weight: 650; font-size: 13px; }
+button:disabled { cursor: not-allowed; opacity: .5; }
 .span-2 { grid-column: span 2; }
 .field { display: flex; flex-direction: column; gap: 7px; min-width: 0; }
 .field-label { font-size: 12px; font-weight: 650; color: #344b54; }
@@ -234,7 +239,7 @@ input:focus, select:focus { border-color: #3f7483; box-shadow: 0 0 0 3px rgba(63
 .secondary-button:hover { background: #f5f8f8; }
 .empty-state { padding: 18px; border: 1px dashed #ccd7da; border-radius: 10px; text-align: center; color: #7a8b92; font-size: 12px; margin-bottom: 18px; }
 .dependents-list { display: grid; gap: 10px; margin-bottom: 18px; }
-.dependent-row { display: grid; grid-template-columns: 28px minmax(0, 1.2fr) minmax(0, 1fr) minmax(150px, .9fr) 32px; gap: 10px; align-items: end; padding: 14px; border: 1px solid #e0e7e9; border-radius: 11px; }
+.dependent-row { display: grid; grid-template-columns: 28px repeat(3, minmax(0, 1fr)) 32px; gap: 10px; align-items: end; padding: 14px; border: 1px solid #e0e7e9; border-radius: 11px; }
 .person-index { align-self: center; width: 25px; height: 25px; display: grid; place-items: center; border-radius: 50%; background: var(--accent-soft); color: #855d29; font-size: 11px; font-weight: 700; }
 .dependent-allowance { grid-column: 2 / 5; min-height: 67px; display: flex; flex-direction: column; justify-content: flex-end; padding: 8px 10px; border-radius: 9px; background: var(--green-soft); }
 .dependent-allowance span { color: #4d6d65; font-size: 10px; font-weight: 650; }
@@ -246,7 +251,7 @@ input:focus, select:focus { border-color: #3f7483; box-shadow: 0 0 0 3px rgba(63
 
 .custom-deduction-title { padding-top: 20px; border-top: 1px solid #e3e9eb; }
 .custom-deductions-list { display: grid; gap: 10px; }
-.custom-deduction-row { display: grid; grid-template-columns: 28px minmax(0, 1.5fr) minmax(150px, .75fr) 32px; gap: 10px; align-items: end; padding: 14px; border: 1px solid #e0e7e9; border-radius: 11px; }
+.custom-deduction-row { display: grid; grid-template-columns: 28px repeat(2, minmax(0, 1fr)) 32px; gap: 10px; align-items: end; padding: 14px; border: 1px solid #e0e7e9; border-radius: 11px; }
 .custom-deduction-total { display: flex; justify-content: space-between; gap: 20px; padding: 12px 14px; border-radius: 9px; background: #f5f7f7; color: var(--muted); font-size: 12px; }
 .custom-deduction-total strong { color: var(--ink); font-variant-numeric: tabular-nums; }
 
@@ -307,6 +312,7 @@ footer p { margin: 0; }
   .workspace { margin: 0 12px; }
   .form-card, .result-card { padding: 21px; border-radius: 14px; }
   .field-grid, .sub-panel { grid-template-columns: 1fr; }
+  .entry-grid, .evidence-grid { grid-template-columns: 1fr; }
   .span-2 { grid-column: span 1; }
   .dependent-row { grid-template-columns: 28px 1fr 32px; }
   .dependent-row .field { grid-column: 2 / 3; }
@@ -350,7 +356,9 @@ footer p { margin: 0; }
   .document-title h1 { max-width: 145mm; margin: 0; color: #152a32; font-family: Georgia, "Times New Roman", serif; font-size: 20pt; font-weight: 600; line-height: 1.18; }
   .document-title span { display: block; margin-top: 2.5mm; color: #5d676a; font-size: 9pt; }
 
-  .document-section { margin-top: 8mm; break-inside: avoid; }
+  .document-section { margin-top: 8mm; break-inside: auto; }
+  .document-section tr { break-inside: avoid; }
+  .document-section h2 { break-after: avoid; }
   .document-section h2, .document-explanation h2 { margin: 0 0 3mm; padding-bottom: 2mm; border-bottom: .8pt solid #263f47; color: #1c343c; font-size: 10pt; letter-spacing: .03em; }
   .document-context { margin: -1mm 0 2mm; color: #697276; font-size: 7.5pt; }
   .document-section table { width: 100%; border-collapse: collapse; }

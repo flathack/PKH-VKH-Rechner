@@ -20,6 +20,10 @@ Prozess- und Verfahrenskostenhilfe nach § 115 ZPO.
 - Wohnkostenaufteilung nach Einkommen oder Köpfen
 - Mehrbedarfe und besondere Belastungen
 - druckbare Ergebnisübersicht
+- Bewilligungsdatum mit geprüften Rechtsständen 2025 und 2026; andere Daten werden nicht stillschweigend mit aktuellen Werten berechnet
+- optionale Angaben zu einzusetzendem Vermögen und voraussichtlichen Kosten für den Vier-Raten-Vergleich
+- Einzelpositionen für weitere Einnahmen mit Empfänger, Zeitraum und Belegverweis
+- begründbarer Wohnkostenanteil und Folgeraten nach Wegfall befristeter Belastungen
 - vollständig lokale Verarbeitung ohne Speicherung oder Datenübertragung
 
 ## Rechtsgrundlagen und Rechenstand
@@ -33,6 +37,12 @@ Der maschinenlesbare Rechtsstand mit Gültigkeitsdatum, Fundstelle, amtlichen
 Quellen, Freibeträgen und Ratenparametern liegt zentral in
 [`app/legal-data.json`](app/legal-data.json). Die Anwendung zeigt den dort
 hinterlegten Rechenstand an.
+
+Bereits geprüfte frühere Jahrgänge stehen in [`app/legal-history.json`](app/legal-history.json).
+Der Rechner ist ein Berechnungsvermerk für die Einkommensrate. Vermögensprüfung,
+Angemessenheit von Abzügen, Belege und die gerichtliche Festsetzung bleiben
+Einzelfallentscheidungen. Fehlt ein unterstützter Rechtsstand oder eine für die
+gewählte Wohnkostenaufteilung notwendige Angabe, ist der Ausdruck gesperrt.
 
 ## Automatische Rechtsstandsaktualisierung
 

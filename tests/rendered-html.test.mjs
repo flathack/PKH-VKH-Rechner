@@ -8,6 +8,7 @@ import test from "node:test";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import legalData from "../app/legal-data.json" with { type: "json" };
+import { incomeForRecipient, monthlyIncome } from "../app/income-items.mjs";
 import {
   ALLOWANCE_SETS,
   LEGAL_DATA,
@@ -15,6 +16,8 @@ import {
   calculateMonthlyRate,
   calculatePkh,
   calculateSpouseAllowance,
+  legalDataForDate,
+  nextMonth,
 } from "../app/pkh-law.mjs";
 
 const REQUIRED_ALLOWANCE_KEYS = ["employed", "party", "adult", "teen", "child", "youngChild"];
@@ -137,7 +140,7 @@ test("verwendet das Manifest als einzige Quelle für den Rechtsstand", async () 
   for (const source of productionFiles) {
     assert.doesNotMatch(source, duplicatedLegalState);
   }
-  assert.match(pageSource, /Maximalbetrag bei \{monthlyRate\.maximumInstallments\} Raten/);
+  assert.match(pageSource, /Obergrenze bei \{monthlyRate\.maximumInstallments\} Raten/);
   assert.match(pageSource, /calculation\.monthlyRate \* monthlyRate\.maximumInstallments/);
 });
 
@@ -184,7 +187,7 @@ test("liefert den lokalen PKH/VKH-Ratenrechner aus", async () => {
   assert.match(html, /class="print-document"/);
   assert.match(html, /Berechnungsvermerk/);
   assert.match(html, /Summe sämtlicher Abzüge/);
-  assert.match(html, /Festzusetzende Monatsrate/);
+  assert.match(html, /Voraussichtliche Monatsrate aus Einkommen/);
   assert.doesNotMatch(html, /codex-preview|react-loading-skeleton|Your site is taking shape/i);
 });
 
@@ -293,6 +296,74 @@ test("berechnet und rundet Monatsraten nach § 115 Abs. 2 ZPO", () => {
   assert.equal(calculateMonthlyRate(601.75), 301);
   assert.equal(calculateMonthlyRate(32.37 - 0.37), 16);
   assert.equal(calculateMonthlyRate(34.80 - 14.80), 10);
+});
+
+test("wählt den Rechtsstand nach Bewilligungsdatum und sperrt unbekannte Jahre", () => {
+  assert.equal(legalDataForDate("2025-12-31")?.legalBasis.shortName, "PKHB 2025");
+  assert.equal(legalDataForDate("2026-01-01")?.legalBasis.shortName, "PKHB 2026");
+  assert.deepEqual(legalDataForDate("2025-01-01")?.allowanceSets.bund, {
+    label: "Übriges Bundesgebiet", employed: 282, party: 619,
+    adult: 496, teen: 518, child: 429, youngChild: 393,
+  });
+  assert.equal(legalDataForDate("2025-01-01")?.sources.pkhb.url, "https://www.gesetze-im-internet.de/pkhb_2025/----.html");
+  assert.equal(legalDataForDate("2024-12-31"), null);
+  assert.equal(legalDataForDate("2027-01-01"), null);
+  assert.equal(legalDataForDate("2026-02-30"), null);
+});
+
+test("prüft die Vier-Raten-Grenze einschließlich des einzusetzenden Vermögens", () => {
+  const input = calculationInput({ netIncome: 1500, employed: false, assetContribution: 100, estimatedCosts: 1662 });
+  const result = calculatePkh(input);
+  assert.equal(result.monthlyRate, 581);
+  assert.equal(result.fourRateThreshold, 2424);
+  assert.equal(result.costExclusion, true);
+  assert.equal(result.installmentsToCoverCosts, 3);
+  assert.equal(result.costsCoveredWithinCap, true);
+  assert.equal(calculatePkh({ ...input, estimatedCosts: 2424 }).costExclusion, true);
+  assert.equal(calculatePkh({ ...input, estimatedCosts: 2424.01 }).costExclusion, false);
+  assert.equal(calculatePkh({ ...input, estimatedCosts: null }).costExclusion, null);
+  assert.equal(calculatePkh({ ...input, estimatedCosts: 40000 }).costsCoveredWithinCap, false);
+});
+
+test("unterscheidet fehlende Angaben zur Wohnkostenaufteilung von null Euro", () => {
+  const input = calculationInput({ netIncome: 2000, warmRent: 900, housingMode: "income", otherHouseholdIncome: null });
+  assert.equal(calculatePkh(input).housingIncomplete, true);
+  assert.equal(calculatePkh({ ...input, otherHouseholdIncome: 0 }).housingIncomplete, false);
+  assert.equal(calculatePkh({ ...input, housingMode: "manual", manualHousingShare: 250 }).housingShare, 250);
+  assert.equal(calculatePkh({ ...input, housingMode: "manual", manualHousingShare: 1000 }).housingShare, 900);
+});
+
+test("ordnet monatliche und jährliche Einzelbeträge nur dem gewählten Empfänger zu", () => {
+  const items = [
+    { recipient: "party", period: "annual", amount: 1000 },
+    { recipient: "party", period: "monthly", amount: 25.15 },
+    { recipient: "dependent-1", period: "monthly", amount: 300 },
+  ];
+  assert.equal(monthlyIncome(items[0]), 83.33);
+  assert.equal(incomeForRecipient(items, "party"), 108.48);
+  assert.equal(incomeForRecipient(items, "dependent-1"), 300);
+  assert.equal(incomeForRecipient(items, "spouse"), 0);
+});
+
+test("berechnet Folgeraten nach mehreren befristeten Belastungen", () => {
+  const result = calculatePkh(calculationInput({
+    netIncome: 2000,
+    specialBurdens: 100,
+    specialEndDate: "2026-12",
+    customDeductions: [{ amount: 50, endMonth: "2027-01" }],
+  }));
+  assert.equal(nextMonth("2026-12"), "2027-01");
+  assert.deepEqual(result.futureRates, [
+    { from: "2027-01", monthlyRate: 1031 },
+    { from: "2027-02", monthlyRate: 1081 },
+  ]);
+  assert.equal(calculatePkh(calculationInput({ approvalDate: "2027-02-01", specialBurdens: 100, specialEndDate: "2027-01" })).expiredBurdenInput, true);
+});
+
+test("zieht bei bereits bereinigtem Partnereinkommen nichts doppelt ab", () => {
+  const base = calculationInput({ netIncome: 2000, spouse: true, spouseIncome: 500, spouseEmployed: true, spouseIncomeDeductions: 100 });
+  assert.equal(calculatePkh(base).spouseAllowance, 501);
+  assert.equal(calculatePkh({ ...base, spouseIncomeAlreadyAdjusted: true }).spouseAllowance, 119);
 });
 
 test("zeigt den individuellen Freibetrag hinzugefügter Personen an", async () => {
