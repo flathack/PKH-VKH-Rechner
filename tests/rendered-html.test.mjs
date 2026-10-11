@@ -369,7 +369,7 @@ test("zieht bei bereits bereinigtem Partnereinkommen nichts doppelt ab", () => {
 test("zeigt den individuellen Freibetrag hinzugefügter Personen an", async () => {
   const page = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
   assert.match(page, /className="dependent-allowance"/);
-  assert.match(page, /calculateDependentDeduction\(person, allowanceSets\[location\]\)/);
+  assert.match(page, /calculateDependentDeduction\(effectiveDependents\[index\], allowanceSets\[location\]\)/);
   assert.match(page, /nach Einkommensanrechnung/);
   assert.match(page, /0–5 Jahre/);
   assert.match(page, /6–13 Jahre/);
@@ -388,7 +388,7 @@ test("bietet Unterhaltszahlungen je Person als Alternative zum Freibetrag an", a
   assert.match(page, /Freibetrag verwenden/);
   assert.match(page, /Unterhaltszahlung verwenden/);
   assert.match(page, /Monatliche Unterhaltszahlung/);
-  assert.match(page, /calculateDependentDeduction\(person, allowanceSets\[location\]\)/);
+  assert.match(page, /calculateDependentDeduction\(effectiveDependents\[index\], allowanceSets\[location\]\)/);
   assert.match(page, /person\.deductionMode === "maintenance" \? "Unterhaltszahlung" : "Freibetrag"/);
 });
 
@@ -641,5 +641,14 @@ test("erzeugt maschinenlesbare Release-Pfade mit gültiger SHA-256-Prüfsumme", 
     assert.doesNotMatch(htmlText, /rel="(?:canonical|sitemap)"|application\/ld\+json/i);
   } finally {
     await rm(tempDirectory, { recursive: true, force: true });
+  }
+});
+
+ test("zieht eigenes Einkommen bei Kindern und weiteren Personen bis auf null vom Freibetrag ab", () => {
+  const allowances = ALLOWANCE_SETS.bund;
+  for (const kind of ["youngChild", "child", "teen", "adult"]) {
+    assert.equal(calculateDependentAllowance(kind, 100, allowances), allowances[kind] - 100);
+    assert.equal(calculateDependentAllowance(kind, allowances[kind], allowances), 0);
+    assert.equal(calculateDependentAllowance(kind, allowances[kind] + 100, allowances), 0);
   }
 });

@@ -469,8 +469,8 @@ export default function Home() {
             ) : null}
 
             <div className="subsection-title">
-              <div><strong>Weitere unterhaltene Personen</strong><small>Eigenes Einkommen wird jeweils gegengerechnet.</small></div>
-              <button type="button" className="secondary-button" onClick={addDependent}>+ Person</button>
+              <div><strong>Kinder und weitere unterhaltene Personen</strong><small>Für jedes Kind und jede weitere Person das monatliche eigene Einkommen eintragen. Es mindert den jeweiligen Freibetrag bis auf 0 Euro.</small></div>
+              <button type="button" className="secondary-button" onClick={addDependent}>+ Kind / Person</button>
             </div>
             {dependents.length === 0 ? (
               <div className="empty-state">Noch keine weiteren Personen erfasst.</div>
@@ -495,12 +495,12 @@ export default function Home() {
                     {person.deductionMode === "maintenance" ? (
                       <MoneyInput id={`dependent-maintenance-${person.id}`} label="Monatliche Unterhaltszahlung" value={person.maintenancePayment} onChange={(value) => updateDependent(person.id, { maintenancePayment: value })} />
                     ) : (
-                      <MoneyInput id={`dependent-income-${person.id}`} label="Eigenes Einkommen" value={person.ownIncome} onChange={(value) => updateDependent(person.id, { ownIncome: value })} />
+                      <MoneyInput id={`dependent-income-${person.id}`} label="Monatliches eigenes Einkommen" value={person.ownIncome} onChange={(value) => updateDependent(person.id, { ownIncome: value })} />
                     )}
                     {person.deductionMode === "allowance" ? <><MoneyInput id={`dependent-deductions-${person.id}`} label="Abzüge vom eigenen Einkommen" value={person.ownIncomeDeductions} onChange={(value) => updateDependent(person.id, { ownIncomeDeductions: value })} /><label className="switch-row compact-switch"><input type="checkbox" checked={person.incomeAlreadyAdjusted} onChange={(event) => updateDependent(person.id, { incomeAlreadyAdjusted: event.target.checked })} /><span className="switch" aria-hidden="true" /><span><strong>Einkommen bereits bereinigt</strong><small>Keine weiteren Abzüge.</small></span></label></> : null}
                     <div className="dependent-allowance" aria-live="polite">
-                      <span>{person.deductionMode === "maintenance" ? "Unterhaltszahlung" : "Freibetrag"}</span>
-                      <strong>{euro.format(calculateDependentDeduction(person, allowanceSets[location]))}</strong>
+                      <span>{person.deductionMode === "maintenance" ? "Unterhaltszahlung" : "Verbleibender Freibetrag"}</span>
+                      <strong>{euro.format(calculateDependentDeduction(effectiveDependents[index], allowanceSets[location]))}</strong>
                       {person.deductionMode === "maintenance" ? (
                         <small>tatsächlich gezahlter Betrag</small>
                       ) : person.kind === "adultEmployed" || person.kind === "teenEmployed" ? (
