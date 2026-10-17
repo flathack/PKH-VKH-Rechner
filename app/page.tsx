@@ -34,6 +34,17 @@ type IncomeItem = {
   evidence: string;
 };
 
+type TravelInput = {
+  method: "none" | "car" | "public" | "manual";
+  distanceKm: number | null;
+  monthlyAmount: number | null;
+  reimbursement: number;
+  reimbursementIncludedInIncome: boolean;
+  reason: string;
+  evidence: string;
+};
+const emptyTravel: TravelInput = { method: "none", distanceKm: null, monthlyAmount: null, reimbursement: 0, reimbursementIncludedInIncome: false, reason: "", evidence: "" };
+
 const dependentLabels: Record<DependentKind, string> = {
   adult: "Erwachsene Person (ab 18 Jahre)",
   adultEmployed: "Erwachsene Person (ab 18 Jahre und erwerbstätig)",
@@ -64,7 +75,7 @@ const evidenceFields = {
   annualPayments: "Sonderzahlungen",
   mandatoryDeductions: "Pflichtabzüge",
   warmRent: "Unterkunft und Heizung",
-  insuranceAndWork: "Versicherung und Erwerbskosten",
+  insuranceAndWork: "Versicherung und sonstige Erwerbskosten",
   additionalMaintenance: "Weiterer Unterhalt",
   additionalNeeds: "Mehrbedarfe",
   specialBurdens: "Besondere Belastungen",
@@ -151,6 +162,8 @@ export default function Home() {
   const [housingAppropriate, setHousingAppropriate] = useState(false);
   const [householdPeople, setHouseholdPeople] = useState(2);
   const [insuranceAndWork, setInsuranceAndWork] = useState(0);
+  const [travel, setTravel] = useState<TravelInput>(emptyTravel);
+  const updateTravel = (patch: Partial<TravelInput>) => setTravel((current) => ({ ...current, ...patch }));
   const [additionalMaintenance, setAdditionalMaintenance] = useState(0);
   const [additionalNeeds, setAdditionalNeeds] = useState(0);
   const [specialBurdens, setSpecialBurdens] = useState(0);
@@ -183,6 +196,7 @@ export default function Home() {
     manualHousingShare,
     householdPeople,
     insuranceAndWork,
+    travel,
     additionalMaintenance,
     additionalNeeds,
     specialBurdens,
@@ -192,7 +206,14 @@ export default function Home() {
     estimatedCosts,
     customDeductions,
   }, law ?? LEGAL_DATA);
-  const incomplete = !law || calculation.housingIncomplete || calculation.expiredBurdenInput;
+  const validationMessage = !law ? "Für dieses Bewilligungsdatum ist kein geprüfter Rechtsstand hinterlegt."
+    : calculation.expiredBurdenInput ? "Eine befristete Belastung endet vor dem Bewilligungsmonat."
+      : calculation.housingIncomplete ? "Für die gewählte Wohnkostenaufteilung fehlt eine Angabe."
+        : calculation.travelCosts.validationMessage;
+  const incomplete = Boolean(validationMessage);
+  const travelDescription = travel.method === "car"
+    ? `Pkw-Pauschale: ${calculation.travelCosts.fullKilometers} volle einfache Entfernungskilometer × ${euro.format((law ?? LEGAL_DATA).travelCosts.carMonthlyRatePerKm)} monatlich`
+    : `${calculation.travelCosts.label}: ${euro.format(calculation.travelCosts.grossAmount)} monatlich`;
 
   const addDependent = () => {
     setDependents((current) => [...current, {
@@ -241,6 +262,7 @@ export default function Home() {
     setHousingAppropriate(false);
     setHouseholdPeople(2);
     setInsuranceAndWork(0);
+    setTravel(emptyTravel);
     setAdditionalMaintenance(0);
     setAdditionalNeeds(0);
     setSpecialBurdens(0);
@@ -338,7 +360,8 @@ export default function Home() {
                 </tr>
               ))}
               <tr><th>Berücksichtigter Anteil der Unterkunft und Heizung ({housingLabels[housingMode]}; {housingReason || "ohne Begründung"}){evidenceNotes.warmRent ? ` – Beleg: ${evidenceNotes.warmRent}` : ""}</th><td>− {euro.format(calculation.housingShare)}</td></tr>
-              <tr><th>Versicherungen und notwendige Erwerbskosten{evidenceNotes.insuranceAndWork ? ` – Beleg: ${evidenceNotes.insuranceAndWork}` : ""}</th><td>− {euro.format(insuranceAndWork)}</td></tr>
+              <tr><th>Versicherungen und sonstige notwendige Erwerbskosten{evidenceNotes.insuranceAndWork ? ` – Beleg: ${evidenceNotes.insuranceAndWork}` : ""}</th><td>− {euro.format(insuranceAndWork)}</td></tr>
+              {travel.method !== "none" ? <tr data-testid="print-travel"><th>Fahrtkosten zur Arbeit: {travelDescription}. {travel.method !== "public" && travel.reason ? `Begründung: ${travel.reason}. ` : ""}{travel.reimbursement > 0 ? `Erstattung ${euro.format(travel.reimbursement)}; ${travel.reimbursementIncludedInIncome ? "bereits im Einkommen enthalten, kein weiterer Abzug von den Fahrtkosten" : `vom Fahrtkostenansatz abgezogen: ${euro.format(calculation.travelCosts.reimbursementDeducted)}`}. ` : ""}{travel.evidence ? `Beleg: ${travel.evidence}. ` : ""}{travel.method === "car" ? `${sources.travelCostsRegulation.title}; ${sources.travelCostsBgh.title}.` : ""}</th><td>{calculation.travelCosts.incomplete ? "Angaben fehlen" : `− ${euro.format(calculation.travelCosts.deduction)}`}</td></tr> : null}
               <tr><th>Weiterer gesetzlicher Unterhalt / Sonderfälle{evidenceNotes.additionalMaintenance ? ` – Beleg: ${evidenceNotes.additionalMaintenance}` : ""}</th><td>− {euro.format(additionalMaintenance)}</td></tr>
               <tr><th>Anerkannte Mehrbedarfe{evidenceNotes.additionalNeeds ? ` – Beleg: ${evidenceNotes.additionalNeeds}` : ""}</th><td>− {euro.format(additionalNeeds)}</td></tr>
               <tr><th>Besondere Belastungen{specialEndDate ? ` bis ${specialEndDate}` : ""}{evidenceNotes.specialBurdens ? ` – Beleg: ${evidenceNotes.specialBurdens}` : ""}</th><td>− {euro.format(specialBurdens)}</td></tr>
@@ -367,12 +390,13 @@ export default function Home() {
 
         <section className="document-section">
           <h2>3. Ergänzende Prüfung</h2>
+          {calculation.travelCosts.reimbursementExcess > 0 ? <p>Fahrtkostenerstattung: Überschuss von {euro.format(calculation.travelCosts.reimbursementExcess)} über den Fahrtkostenansatz. Anrechnung als Einkommen gesondert prüfen.</p> : null}
           <p>Vermögenseinsatz: {calculation.assetContribution == null ? "nicht angegeben" : euro.format(calculation.assetContribution)} · Voraussichtliche Kosten: {calculation.estimatedCosts == null ? "nicht angegeben" : euro.format(calculation.estimatedCosts)}</p>
           <p>Vier Monatsraten zuzüglich Vermögenseinsatz: {euro.format(calculation.fourRateThreshold)}. {calculation.costExclusion == null ? "Kostenvergleich offen." : calculation.costExclusion ? "Kosten übersteigen diesen Betrag nicht; Ausschluss nach § 115 Abs. 4 ZPO prüfen." : "Kosten übersteigen diesen Betrag."}</p>
           {calculation.installmentsToCoverCosts != null ? <p>Rechnerische Kostendeckung nach {calculation.installmentsToCoverCosts} Monatsraten nach Vermögenseinsatz. {calculation.costsCoveredWithinCap ? `Innerhalb der Grenze von ${monthlyRate.maximumInstallments} Raten.` : `Außerhalb der Grenze von ${monthlyRate.maximumInstallments} Raten.`}</p> : calculation.estimatedCosts != null && calculation.assetContribution != null ? <p>Mit der aktuellen Rate keine Kostendeckung durch Monatsraten.</p> : null}
           {calculation.futureRates.map((step) => <p key={step.from}>Nach Wegfall befristeter Belastungen ab {step.from}: voraussichtlich {euro.format(step.monthlyRate)} monatlich.</p>)}
           <p>Wohnkosten angemessen geprüft: {housingAppropriate ? "ja" : "offen"}. {assessmentNote}</p>
-          {incomplete ? <p><strong>Berechnung unvollständig: {!law ? "Für das Bewilligungsdatum ist kein geprüfter Rechtsstand hinterlegt." : calculation.expiredBurdenInput ? "Eine befristete Belastung endet vor dem Bewilligungsmonat." : "Angabe zur Wohnkostenaufteilung fehlt."}</strong></p> : null}
+          {incomplete ? <p><strong>Berechnung unvollständig: {validationMessage}</strong></p> : null}
         </section>
 
         <section className="document-explanation">
@@ -543,9 +567,33 @@ export default function Home() {
           </section>
 
           <section className="form-card">
-            <SectionHeader number="04" title="Weitere Abzüge" subtitle="Nachweisbare Mehrbedarfe und besondere Belastungen" />
+            <SectionHeader number="04" title="Fahrtkosten zur Arbeit" subtitle="Gesonderter monatlicher Abzug für die Partei" />
+            <label className="field" htmlFor="travel-method"><span className="field-label">Berechnungsmethode</span><select id="travel-method" value={travel.method} onChange={(event) => updateTravel({ method: event.target.value as TravelInput["method"] })}>
+              <option value="none">Kein gesonderter Ansatz</option>
+              <option value="car">Pkw-Pauschale nach einfacher Entfernung</option>
+              <option value="public">Öffentliche Verkehrsmittel</option>
+              <option value="manual">Abweichender geprüfter Monatsbetrag</option>
+            </select></label>
+            {travel.method !== "none" ? <>
+              <div className="field-grid travel-fields">
+                {travel.method === "car" ? <label className="field" htmlFor="travel-distance"><span className="field-label">Einfache Entfernung zur Arbeit (km)</span><input id="travel-distance" type="number" min="0" step="0.1" value={travel.distanceKm ?? ""} placeholder="z. B. 25" onChange={(event) => updateTravel({ distanceKm: event.target.value === "" ? null : Math.max(0, Number(event.target.value) || 0) })} /><small>Volle Kilometer × {euro.format((law ?? LEGAL_DATA).travelCosts.carMonthlyRatePerKm)} pro Monat. Keine zusätzliche Multiplikation mit Rückweg oder Arbeitstagen.</small></label>
+                  : <OptionalMoneyInput id="travel-monthly" label={travel.method === "public" ? "Notwendige monatliche Ticketkosten" : "Geprüfter monatlicher Fahrtkostenbetrag"} value={travel.monthlyAmount} onChange={(monthlyAmount) => updateTravel({ monthlyAmount })} hint="Vor Erstattungen eintragen; bereits in anderen Positionen enthaltene Kosten herausrechnen." />}
+                {travel.method !== "public" ? <label className="field" htmlFor="travel-reason"><span className="field-label">{travel.method === "car" ? "Warum ist die Pkw-Nutzung erforderlich?" : "Begründung des abweichenden Ansatzes"}</span><input id="travel-reason" value={travel.reason} onChange={(event) => updateTravel({ reason: event.target.value })} placeholder={travel.method === "car" ? "z. B. kein zumutbarer ÖPNV bei Schichtbeginn" : "z. B. anteiliger Monat oder gerichtliche Vorgabe"} /></label> : null}
+                <MoneyInput id="travel-reimbursement" label="Monatliche Fahrtkostenerstattung" value={travel.reimbursement} onChange={(reimbursement) => updateTravel({ reimbursement })} hint="Soweit nicht im Einkommen erfasst, bis zur Höhe des Fahrtkostenansatzes verrechnen." />
+                <label className="field" htmlFor="travel-evidence"><span className="field-label">Beleg / Prüfvermerk (optional)</span><input id="travel-evidence" value={travel.evidence} onChange={(event) => updateTravel({ evidence: event.target.value })} placeholder="z. B. Anlage 4, Fahrplan und Arbeitszeiten" /></label>
+              </div>
+              {travel.reimbursement > 0 ? <label className="switch-row"><input id="travel-reimbursement-income" type="checkbox" checked={travel.reimbursementIncludedInIncome} onChange={(event) => updateTravel({ reimbursementIncludedInIncome: event.target.checked })} /><span className="switch" aria-hidden="true" /><span><strong>Erstattung ist bereits im erfassten Einkommen enthalten</strong><small>Dann bleibt der volle Fahrtkostenabzug erhalten; die Erstattung wird nicht nochmals verrechnet.</small></span></label> : null}
+              {calculation.travelCosts.incomplete ? <p className="validation-note" role="status">{calculation.travelCosts.validationMessage}</p> : <div className="calculated-line" data-testid="travel-result"><span>{travelDescription}{calculation.travelCosts.reimbursementDeducted > 0 ? ` − Erstattung ${euro.format(calculation.travelCosts.reimbursementDeducted)}` : ""}</span><strong>{euro.format(calculation.travelCosts.deduction)}</strong></div>}
+              {calculation.travelCosts.reimbursementExcess > 0 ? <p className="validation-note">Die Erstattung übersteigt den Fahrtkostenansatz um {euro.format(calculation.travelCosts.reimbursementExcess)}. Eine Anrechnung dieses Überschusses als Einkommen gesondert prüfen.</p> : null}
+              <p className="travel-help">Fahrtkosten nur hier oder in anderen Abzügen erfassen. Bei Selbständigen dürfen bereits im Gewinn berücksichtigte Kosten nicht nochmals abgezogen werden. Für Teilmonate, abweichende Fahrtmuster oder eine andere gerichtliche Berechnung den geprüften Monatsbetrag verwenden.</p>
+              {travel.method === "car" ? <div className="law-links"><a href={sources.travelCostsRegulation.url} target="_blank" rel="noreferrer">{sources.travelCostsRegulation.title}</a><a href={sources.travelCostsBgh.url} target="_blank" rel="noreferrer">BGH: keine Begrenzung auf 40 km</a></div> : null}
+            </> : null}
+          </section>
+
+          <section className="form-card">
+            <SectionHeader number="05" title="Weitere Abzüge" subtitle="Nachweisbare Mehrbedarfe und besondere Belastungen" />
             <div className="field-grid">
-              <MoneyInput id="insurance-work" label="Versicherungen und notwendige Erwerbskosten" value={insuranceAndWork} onChange={setInsuranceAndWork} hint="§ 82 Abs. 2 Nr. 3–4 SGB XII, z. B. angemessene Versicherung oder Fahrtkosten" />
+              <MoneyInput id="insurance-work" label="Versicherungen und sonstige Erwerbskosten" value={insuranceAndWork} onChange={setInsuranceAndWork} hint="§ 82 Abs. 2 Nr. 3–4 SGB XII; separat erfasste Fahrtkosten hier nicht nochmals eintragen." />
               <MoneyInput id="additional-needs" label="Anerkannte Mehrbedarfe" value={additionalNeeds} onChange={setAdditionalNeeds} hint="§ 21 SGB II / § 30 SGB XII, z. B. Ernährung, Behinderung oder Alleinerziehung" />
               <MoneyInput id="special-burdens" label="Besondere Belastungen" value={specialBurdens} onChange={setSpecialBurdens} hint="§ 115 Abs. 1 Nr. 5 ZPO, z. B. laufende Kreditrate, Fortbildung oder andere PKH-Rate" />
               <label className="field" htmlFor="special-end"><span className="field-label">Letzter Monat dieser Belastung (optional)</span><input id="special-end" type="month" value={specialEndDate} onChange={(event) => setSpecialEndDate(event.target.value)} /><small>Ab dem Folgemonat wird eine weitere Rate berechnet.</small></label>
@@ -588,7 +636,7 @@ export default function Home() {
             <details className="legal-details"><summary>Belegverweise für Sammelpositionen</summary><div className="evidence-grid">{(Object.entries(evidenceFields) as [EvidenceKey, string][]).map(([key, label]) => <label className="field" key={key}><span className="field-label">{label}</span><input value={evidenceNotes[key]} onChange={(event) => setEvidenceNotes((notes) => ({ ...notes, [key]: event.target.value }))} placeholder="z. B. Anlage 3" /></label>)}</div></details>
           </section>
           <section className="form-card">
-            <SectionHeader number="05" title="Vermögen und Kosten" subtitle="Ergänzende Prüfung nach § 115 Abs. 3 und 4 ZPO" />
+            <SectionHeader number="06" title="Vermögen und Kosten" subtitle="Ergänzende Prüfung nach § 115 Abs. 3 und 4 ZPO" />
             <div className="field-grid">
               <OptionalMoneyInput id="assets" label="Einzusetzender Vermögensteil" value={assetContribution} onChange={setAssetContribution} hint="Nur nach gesonderter Zumutbarkeitsprüfung; 0 Euro bewusst eintragen." />
               <OptionalMoneyInput id="costs" label="Voraussichtliche Verfahrenskosten" value={estimatedCosts} onChange={setEstimatedCosts} hint="Für den Vergleich mit vier Monatsraten zuzüglich Vermögenseinsatz." />
@@ -611,7 +659,8 @@ export default function Home() {
             <div><span>Pflichtabzüge</span><strong>− {euro.format(mandatoryDeductions)}</strong></div>
             <div><span>Freibeträge / Unterhalt</span><strong>− {euro.format(calculation.totalAllowances)}</strong></div>
             <div><span>Unterkunftsanteil</span><strong>− {euro.format(calculation.housingShare)}</strong></div>
-            <div><span>Weitere Abzüge</span><strong>− {euro.format(calculation.furtherDeductions)}</strong></div>
+            {travel.method !== "none" ? <div data-testid="summary-travel"><span>Fahrtkosten zur Arbeit</span><strong>{calculation.travelCosts.incomplete ? "Angaben fehlen" : `− ${euro.format(calculation.travelCosts.deduction)}`}</strong></div> : null}
+            <div><span>Weitere Abzüge</span><strong>− {euro.format(calculation.furtherDeductions - calculation.travelCosts.deduction)}</strong></div>
             <div className="disposable"><span>Einzusetzendes Einkommen</span><strong>{euro.format(Math.max(0, calculation.disposableIncome))}</strong></div>
           </div>
 
@@ -620,7 +669,7 @@ export default function Home() {
             <strong>{euro.format(calculation.monthlyRate * monthlyRate.maximumInstallments)}</strong>
           </div> : null}
           {calculation.futureRates.map((step) => <div className="calculated-line" key={step.from}><span>Ab {step.from} nach Wegfall befristeter Belastung</span><strong>{euro.format(step.monthlyRate)}</strong></div>)}
-          {incomplete ? <p className="validation-note">{!law ? "Für dieses Bewilligungsdatum ist kein geprüfter Rechtsstand hinterlegt." : calculation.expiredBurdenInput ? "Eine befristete Belastung endet vor dem Bewilligungsmonat." : "Für die gewählte Wohnkostenaufteilung fehlt eine Angabe."}</p> : null}
+          {incomplete ? <p className="validation-note">{validationMessage}</p> : null}
           <div className="action-row">
             <button type="button" className="primary-button" disabled={incomplete} onClick={() => window.print()}>Drucken</button>
             <button type="button" className="pdf-button" disabled={incomplete} onClick={() => window.print()} aria-describedby="pdf-help">Als PDF speichern</button>

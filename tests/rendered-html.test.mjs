@@ -16,13 +16,14 @@ import {
   calculateMonthlyRate,
   calculatePkh,
   calculateSpouseAllowance,
+  calculateTravelCosts,
   legalDataForDate,
   nextMonth,
 } from "../app/pkh-law.mjs";
 
 const REQUIRED_ALLOWANCE_KEYS = ["employed", "party", "adult", "teen", "child", "youngChild"];
 const REMOVED_DISCLAIMER_PATTERN = /legal-disclaimer|screen-disclaimer|print-disclaimer|Rechtlicher Hinweis|privates Hobbyprojekt eines Rechtspflegers|ersetzt keine Rechtsberatung|kein Anspruch auf Richtigkeit, Vollständigkeit oder Aktualität|Die Berechnung und ihr Ergebnis sind unverbindlich/i;
-const OFFICIAL_SOURCE_HOSTS = new Set(["www.gesetze-im-internet.de", "www.recht.bund.de"]);
+const OFFICIAL_SOURCE_HOSTS = new Set(["www.gesetze-im-internet.de", "www.recht.bund.de", "juris.bundesgerichtshof.de"]);
 const execFileAsync = promisify(execFile);
 const PROJECT_ROOT = fileURLToPath(new URL("../", import.meta.url));
 const PUBLIC_SITE_URL = "https://flathack.github.io/PKH-VKH-Rechner/";
@@ -149,6 +150,75 @@ test("leitet die Ratenparameter aus dem Manifest ab", () => {
   assert.equal(calculateMonthlyRate(incomeThreshold), thresholdRate);
   assert.equal(calculateMonthlyRate((minimumRate * legalData.monthlyRate.incomeDivisor) - 0.01), 0);
   assert.equal(calculateMonthlyRate(incomeThreshold + 1.75), thresholdRate + 1);
+});
+
+test("hinterlegt die Fahrtkostenpauschale samt amtlicher Quellen im jeweiligen Rechtsstand", () => {
+  for (const date of ["2025-01-01", "2026-01-01"]) {
+    const law = legalDataForDate(date);
+    assert.equal(law.travelCosts.carMonthlyRatePerKm, 5.20);
+    assert.equal(law.travelCosts.maximumDistanceKm, null);
+    assert.equal(law.sources.travelCostsRegulation.url, "https://www.gesetze-im-internet.de/bshg_76dv/__3.html");
+    assert.equal(new URL(law.sources.travelCostsBgh.url).hostname, "juris.bundesgerichtshof.de");
+  }
+});
+
+test("berechnet volle einfache Entfernungskilometer ohne 40-km-Grenze", () => {
+  for (const [distanceKm, expected] of [[0, 0], [25, 130], [24.9, 124.8], [40, 208], [50, 260], [110, 572]]) {
+    const result = calculateTravelCosts({ method: "car", distanceKm, reason: "Kein ÖPNV bei Schichtbeginn" });
+    assert.equal(result.deduction, expected, `${distanceKm} km`);
+    assert.equal(result.incomplete, false);
+  }
+  const customLaw = { ...LEGAL_DATA, travelCosts: { ...LEGAL_DATA.travelCosts, carMonthlyRatePerKm: 6 } };
+  assert.equal(calculateTravelCosts({ method: "car", distanceKm: 25, reason: "Geprüft" }, customLaw).deduction, 150);
+});
+
+test("unterscheidet Ticketkosten, geprüfte Sonderfälle und fehlende Angaben", () => {
+  assert.equal(calculateTravelCosts({ method: "public", monthlyAmount: 61.25 }).deduction, 61.25);
+  assert.equal(calculateTravelCosts({ method: "manual", monthlyAmount: 312.40, reason: "Gerichtlich geprüfter Ansatz" }).deduction, 312.40);
+  for (const input of [
+    { method: "car", distanceKm: null, reason: "Geprüft" },
+    { method: "car", distanceKm: 25, reason: " " },
+    { method: "car", distanceKm: -1, reason: "Geprüft" },
+    { method: "car", distanceKm: Infinity, reason: "Geprüft" },
+    { method: "public", monthlyAmount: null },
+    { method: "public", monthlyAmount: -1 },
+    { method: "public", monthlyAmount: 100, reimbursement: -30 },
+    { method: "bike" },
+    { method: "manual", monthlyAmount: 100, reason: "" },
+  ]) {
+    const result = calculateTravelCosts(input);
+    assert.equal(result.incomplete, true);
+    assert.equal(result.deduction, 0);
+  }
+  assert.equal(calculateTravelCosts({ method: "none", distanceKm: 25, monthlyAmount: 100, reimbursement: 30 }).deduction, 0);
+});
+
+test("verrechnet Erstattungen nur einmal und nie über die Fahrtkosten hinaus", () => {
+  const travel = { method: "car", distanceKm: 25, reason: "Geprüft", reimbursement: 30 };
+  assert.equal(calculateTravelCosts(travel).deduction, 100);
+  assert.equal(calculateTravelCosts({ ...travel, reimbursement: 200 }).deduction, 0);
+  assert.equal(calculateTravelCosts({ ...travel, reimbursement: 200 }).reimbursementExcess, 70);
+  assert.equal(calculateTravelCosts({ ...travel, reimbursementIncludedInIncome: true }).deduction, 130);
+  const base = calculationInput({ netIncome: 2000, employed: true, warmRent: 500, insuranceAndWork: 50, travel });
+  const netted = calculatePkh(base);
+  const asIncome = calculatePkh({ ...base, otherIncome: 30, travel: { ...travel, reimbursementIncludedInIncome: true } });
+  assert.equal(netted.disposableIncome, 449);
+  assert.equal(netted.monthlyRate, 224);
+  assert.equal(asIncome.disposableIncome, netted.disposableIncome);
+  assert.equal(asIncome.monthlyRate, netted.monthlyRate);
+});
+
+test("berücksichtigt Fahrtkosten genau einmal im Gesamtergebnis und in Folgeraten", () => {
+  const result = calculatePkh(calculationInput({
+    netIncome: 2000, employed: true, warmRent: 500, insuranceAndWork: 50,
+    travel: { method: "car", distanceKm: 25, reason: "Geprüft" },
+    specialBurdens: 20, specialEndDate: "2026-12",
+  }));
+  assert.equal(result.travelCosts.deduction, 130);
+  assert.equal(result.furtherDeductions, 200);
+  assert.equal(result.disposableIncome, 399);
+  assert.equal(result.monthlyRate, 199);
+  assert.deepEqual(result.futureRates, [{ from: "2027-01", monthlyRate: 209 }]);
 });
 
 test("liefert den lokalen PKH/VKH-Ratenrechner aus", async () => {

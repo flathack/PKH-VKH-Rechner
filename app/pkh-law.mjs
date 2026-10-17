@@ -88,6 +88,36 @@ export function calculatePersonAllowance(baseAllowance, income, deductions, empl
   return fromCents(Math.max(0, toCents(baseAllowance) - chargeable));
 }
 
+/** Monatliche Fahrtkosten der Partei; die Pkw-Pauschale gilt je vollem einfachen Entfernungskilometer. */
+export function calculateTravelCosts(input = {}, law = LEGAL_DATA) {
+  const method = input.method ?? "none";
+  const labels = { none: "Kein gesonderter Ansatz", car: "Pkw-Pauschale", public: "Öffentliche Verkehrsmittel", manual: "Abweichender geprüfter Monatsbetrag" };
+  const fullKilometers = Math.floor(Number(input.distanceKm) || 0);
+  let validationMessage = "";
+  if (!Object.hasOwn(labels, method)) validationMessage = "Bitte eine gültige Fahrtkostenmethode wählen.";
+  else if (method === "car" && (input.distanceKm == null || !Number.isFinite(input.distanceKm) || input.distanceKm < 0)) validationMessage = "Bitte die einfache Entfernung zur Arbeit angeben.";
+  else if ((method === "public" || method === "manual") && (input.monthlyAmount == null || !Number.isFinite(input.monthlyAmount) || input.monthlyAmount < 0)) validationMessage = "Bitte den monatlichen Fahrtkostenbetrag angeben.";
+  else if ((method === "car" || method === "manual") && !input.reason?.trim()) validationMessage = method === "car" ? "Bitte begründen, weshalb die Pkw-Nutzung erforderlich ist." : "Bitte den abweichenden Ansatz begründen.";
+  else if (method !== "none" && (!Number.isFinite(input.reimbursement ?? 0) || (input.reimbursement ?? 0) < 0)) validationMessage = "Bitte einen gültigen Erstattungsbetrag angeben.";
+
+  const grossCents = method === "none" || validationMessage ? 0
+    : method === "car" ? fullKilometers * toCents(law.travelCosts.carMonthlyRatePerKm)
+      : toCents(input.monthlyAmount);
+  // Bereits im Einkommen enthaltene Erstattungen dürfen den Abzug nicht nochmals mindern.
+  const reimbursementCents = method === "none" || validationMessage || input.reimbursementIncludedInIncome ? 0 : Math.max(0, toCents(input.reimbursement));
+  return {
+    method,
+    label: labels[method] ?? "Unbekannte Methode",
+    fullKilometers: Math.max(0, fullKilometers),
+    grossAmount: fromCents(grossCents),
+    reimbursementDeducted: fromCents(Math.min(grossCents, reimbursementCents)),
+    reimbursementExcess: fromCents(Math.max(0, reimbursementCents - grossCents)),
+    deduction: fromCents(Math.max(0, grossCents - reimbursementCents)),
+    incomplete: Boolean(validationMessage),
+    validationMessage,
+  };
+}
+
 /**
  * Vollständige PKH/VKH-Ratenberechnung. Geldbeträge werden beim Eintritt in
  * die Funktion in Cent umgewandelt und erst für die Ausgabe zurückkonvertiert.
@@ -128,8 +158,10 @@ export function calculatePkh(input, law = LEGAL_DATA) {
     || (input.housingMode === "manual" && input.manualHousingShare == null);
 
   const totalAllowancesCents = employmentAllowanceCents + partyAllowanceCents + spouseAllowanceCents + dependentAllowanceCents;
+  const travelCosts = calculateTravelCosts(input.travel, law);
   const customDeductionTotalCents = input.customDeductions.reduce((sum, item) => sum + toCents(item.amount), 0);
   const furtherDeductionsCents = toCents(input.insuranceAndWork)
+    + toCents(travelCosts.deduction)
     + toCents(input.additionalMaintenance)
     + toCents(input.additionalNeeds)
     + toCents(input.specialBurdens)
@@ -179,6 +211,7 @@ export function calculatePkh(input, law = LEGAL_DATA) {
     totalAllowances: fromCents(totalAllowancesCents),
     housingShare: fromCents(housingShareCents),
     housingIncomplete,
+    travelCosts,
     expiredBurdenInput,
     customDeductionTotal: fromCents(customDeductionTotalCents),
     furtherDeductions: fromCents(furtherDeductionsCents),

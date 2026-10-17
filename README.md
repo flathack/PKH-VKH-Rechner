@@ -24,6 +24,7 @@ Prozess- und Verfahrenskostenhilfe nach § 115 ZPO.
 - optionale Angaben zu einzusetzendem Vermögen und voraussichtlichen Kosten für den Vier-Raten-Vergleich
 - Einzelpositionen für weitere Einnahmen mit Empfänger, Zeitraum und Belegverweis
 - begründbarer Wohnkostenanteil und Folgeraten nach Wegfall befristeter Belastungen
+- gesonderte Fahrtkosten zur Arbeit: Pkw-Monatspauschale je vollem einfachen Entfernungskilometer ohne 40-km-Grenze, ÖPNV oder begründeter Monatsbetrag; Erstattungen werden einmal berücksichtigt
 - vollständig lokale Verarbeitung ohne Speicherung oder Datenübertragung
 
 ## Rechtsgrundlagen und Rechenstand
@@ -70,6 +71,21 @@ npm test
 npm run build:pages
 npm run build:single
 ```
+
+Die Browsertests prüfen Fahrtkosten auf Desktop und Mobilgerät einschließlich
+Druckfassung und Offline-HTML. Einmalig den Testbrowser installieren:
+
+```bash
+npx playwright install --with-deps chromium
+npm run test:browser
+```
+
+Fahrtkosten werden ausschließlich im eigenen Bereich erfasst. Bereits im
+Sammelfeld oder im Gewinn enthaltene Fahrtkosten dürfen nicht zusätzlich
+angesetzt werden. Eine schon als Einkommen erfasste Erstattung wird im
+Fahrtkostenbereich entsprechend markiert. Für Teilmonate und andere gerichtlich
+geprüfte Ansätze gibt es die begründbare manuelle Eingabe. Der Pauschbetrag und
+die amtlichen Quellen stehen in den aktuellen und historischen Rechtsdaten.
 
 Der statische GitHub-Pages-Build wird bei Änderungen auf `main` automatisch
 veröffentlicht. Der Ein-Datei-Build wird bei einem Versions-Tag automatisch

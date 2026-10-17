@@ -36,6 +36,12 @@ jobs:
       - name: Validate
         run: npm test
 
+      - name: Install test browser
+        run: npx playwright install --with-deps chromium
+
+      - name: Verify calculator in browser
+        run: npm run test:browser
+
       - name: Build static Pages site
         run: npm run build:pages
 

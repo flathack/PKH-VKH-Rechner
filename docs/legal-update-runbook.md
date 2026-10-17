@@ -7,6 +7,7 @@ Dieses Verfahren aktualisiert den PKH/VKH-Rechner nur auf Grundlage eines vollst
 - Freibeträge nach § 115 Abs. 1 ZPO und der jeweiligen Prozesskostenhilfebekanntmachung,
 - die bundesweiten und im Manifest geführten regionalen Beträge,
 - die Ratenparameter und Höchstratenzahl nach § 115 Abs. 2 ZPO,
+- die Pkw-Monatspauschale nach § 3 Abs. 6 DVO zu § 82 SGB XII und die hierzu hinterlegte BGH-Rechtsprechung,
 - unmittelbar verwendete Verweisnormen, soweit sich daraus die Berechnung ändert,
 - Berechnungsjahr, Gültigkeitsbeginn, Fundstelle, Quell-URLs, Tests, UI und Release-Artefakt.
 
@@ -126,6 +127,8 @@ npm test
 npm run lint
 npm run build:pages
 npm run build:single
+npx playwright install --with-deps chromium
+npm run test:browser
 
 git diff --check
 git status --short

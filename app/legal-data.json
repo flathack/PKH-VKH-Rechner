@@ -26,6 +26,14 @@
     "sgb12Section82": {
       "title": "§ 82 SGB XII – Begriff des Einkommens",
       "url": "https://www.gesetze-im-internet.de/sgb_12/__82.html"
+    },
+    "travelCostsRegulation": {
+      "title": "§ 3 Abs. 6 DVO zu § 82 SGB XII",
+      "url": "https://www.gesetze-im-internet.de/bshg_76dv/__3.html"
+    },
+    "travelCostsBgh": {
+      "title": "BGH, 08.08.2012 – XII ZB 291/11",
+      "url": "https://juris.bundesgerichtshof.de/cgi-bin/rechtsprechung/document.py?Art=en&Blank=1.pdf&Gericht=bgh&az=XII+ZB+291%2F11"
     }
   },
   "allowanceSets": {
@@ -72,5 +80,9 @@
     "incomeDivisor": 2,
     "minimumRate": 10,
     "maximumInstallments": 48
+  },
+  "travelCosts": {
+    "carMonthlyRatePerKm": 5.2,
+    "maximumDistanceKm": null
   }
 }

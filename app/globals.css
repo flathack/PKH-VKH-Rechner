@@ -173,6 +173,8 @@ button { cursor: pointer; }
 .evidence-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; padding: 12px; }
 .entry-grid .icon-button { justify-self: end; }
 .validation-note { color: var(--danger); font-weight: 650; font-size: 13px; }
+.travel-fields { margin-top: 18px; }
+.travel-help { color: var(--muted); font-size: 12px; line-height: 1.5; margin: 16px 0 0; }
 button:disabled { cursor: not-allowed; opacity: .5; }
 .span-2 { grid-column: span 2; }
 .field { display: flex; flex-direction: column; gap: 7px; min-width: 0; }
