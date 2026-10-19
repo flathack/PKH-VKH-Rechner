@@ -2,6 +2,8 @@ import legalData from "./legal-data.json" with { type: "json" };
 import legalHistory from "./legal-history.json" with { type: "json" };
 import { amountToCents, assertSafeCents } from "./amounts.mjs";
 import { calculatePaymentPlan } from "./payment-plan.mjs";
+import { incomeSummary, incomeForRecipient } from "./income-items.mjs";
+import { employmentAllowance } from "./employment-allowance.mjs";
 
 export const LEGAL_DATA = legalData;
 export const ALLOWANCE_SETS = LEGAL_DATA.allowanceSets;
@@ -57,16 +59,36 @@ export function calculateDependentAllowance(kind, ownIncome, allowances) {
   return fromCents(calculateDependentAllowanceCents(kind, toCents(ownIncome), allowances));
 }
 
+export function dependentDetails(person, allowances) {
+  const base = allowances[dependentBaseKind(person.kind)];
+  const ownIncome = fromCents(toCents(person.ownIncome));
+  const employed = person.deductionMode !== "maintenance" && person.deductionMode !== "shared"
+    && (person.kind === "adultEmployed" || person.kind === "teenEmployed");
+  const employment = employmentAllowance({ ...person, employed }, allowances.employed,
+    person.incomeAlreadyAdjusted ? ownIncome : Math.max(0, ownIncome - fromCents(toCents(person.ownIncomeDeductions))), { relative: true });
+  let message = "";
+  let amount;
+  if (person.deductionMode === "maintenance") amount = Math.max(0, fromCents(toCents(person.maintenancePayment)));
+  else if (person.deductionMode === "shared") {
+    const half = base / 2;
+    if (person.kind === "adult" || person.kind === "adultEmployed") message = "Das paritätische Wechselmodell ist hier nur für minderjährige Kinder vorgesehen.";
+    if (ownIncome > 0 && (person.sharedCareAllowance == null || !person.sharedCareNote?.trim())) message ||= "Bei Kindeseinkommen/Kindergeld bitte den geprüften hälftigen Freibetrag und einen Prüfvermerk angeben.";
+    if (person.sharedCareAllowance != null && !person.sharedCareNote?.trim()) message ||= "Bitte den manuell geprüften Freibetrag im Wechselmodell begründen.";
+    const reviewed = person.sharedCareAllowance == null ? half : fromCents(toCents(person.sharedCareAllowance));
+    if (reviewed < 0 || reviewed > half) message ||= "Der geprüfte Freibetrag im Wechselmodell darf den hälftigen Altersfreibetrag nicht übersteigen.";
+    amount = reviewed + Math.max(0, fromCents(toCents(person.maintenancePayment)));
+  } else {
+    const chargeable = person.incomeAlreadyAdjusted ? toCents(ownIncome)
+      : Math.max(0, toCents(ownIncome) - toCents(person.ownIncomeDeductions) - toCents(employment.amount));
+    amount = fromCents(Math.max(0, toCents(base) - chargeable));
+    message = employment.message;
+  }
+  return { amount: message ? 0 : amount, incomplete: Boolean(message), message, employment,
+    halfAllowance: person.deductionMode === "shared" ? base / 2 : null };
+}
+
 export function calculateDependentDeductionCents(person, allowances) {
-  if (person.deductionMode === "maintenance") {
-    return Math.max(0, toCents(person.maintenancePayment));
-  }
-  const ownIncomeCents = toCents(person.ownIncome);
-  const deductionsCents = toCents(person.ownIncomeDeductions);
-  if (person.incomeAlreadyAdjusted) {
-    return Math.max(0, toCents(allowances[dependentBaseKind(person.kind)]) - ownIncomeCents);
-  }
-  return calculateDependentAllowanceCents(person.kind, Math.max(0, ownIncomeCents - deductionsCents), allowances);
+  return toCents(dependentDetails(person, allowances).amount);
 }
 
 export function calculateDependentDeduction(person, allowances) {
@@ -128,20 +150,27 @@ export function calculatePkh(input, law = LEGAL_DATA) {
   const allowances = law.allowanceSets[input.location] ?? law.allowanceSets.bund;
   const netIncomeCents = toCents(input.netIncome);
   const otherIncomeCents = toCents(input.otherIncome);
+  const incomeItems = input.incomeItems ?? [];
+  const partyIncome = incomeSummary(incomeItems, "party", input.annualPayments ?? 0);
   const annualMonthlyCents = Math.round(toCents(input.annualPayments) / 12);
   const mandatoryDeductionsCents = toCents(input.mandatoryDeductions);
-  const grossMonthlyIncomeCents = assertSafeCents(netIncomeCents + otherIncomeCents + annualMonthlyCents);
+  const grossMonthlyIncomeCents = assertSafeCents(netIncomeCents + otherIncomeCents + toCents(partyIncome.totalMonthlyAmount));
   const incomeAfterMandatoryCents = Math.max(0, grossMonthlyIncomeCents - mandatoryDeductionsCents);
 
-  const employmentAllowanceCents = input.employed ? toCents(allowances.employed) : 0;
+  const employment = employmentAllowance(input, allowances.employed, fromCents(incomeAfterMandatoryCents));
+  const employmentAllowanceCents = toCents(employment.amount);
   const partyAllowanceCents = toCents(allowances.party);
-  const spouseAllowanceCents = input.spouse
-    ? toCents(calculatePersonAllowance(allowances.party, input.spouseIncome, input.spouseIncomeDeductions, input.spouseEmployed, input.spouseIncomeAlreadyAdjusted, allowances.employed))
-    : 0;
-  const dependentAllowanceCents = input.dependents.reduce(
-    (sum, person) => assertSafeCents(sum + calculateDependentDeductionCents(person, allowances)),
-    0,
-  );
+  const spouseIncome = fromCents(toCents(input.spouseIncome) + toCents(incomeForRecipient(incomeItems, "spouse")));
+  const spouseAvailable = input.spouseIncomeAlreadyAdjusted ? spouseIncome : Math.max(0, spouseIncome - fromCents(toCents(input.spouseIncomeDeductions)));
+  const spouseEmployment = employmentAllowance({ ...input.spouseEmployment, employed: input.spouse && input.spouseEmployed,
+    incomeAlreadyAdjusted: input.spouseIncomeAlreadyAdjusted }, allowances.employed, spouseAvailable, { relative: true });
+  const spouseAllowanceCents = input.spouse ? Math.max(0, toCents(allowances.party) - Math.max(0,
+    toCents(spouseAvailable) - toCents(spouseEmployment.amount))) : 0;
+  const dependentResults = input.dependents.map((person) => dependentDetails({ ...person,
+    ownIncome: fromCents(toCents(person.ownIncome) + toCents(incomeForRecipient(incomeItems, `dependent-${person.id}`))) }, allowances));
+  const dependentAllowanceCents = dependentResults.reduce((sum, person) => assertSafeCents(sum + toCents(person.amount)), 0);
+  const dependentValidationMessage = dependentResults.find((person) => person.incomplete)?.message ?? "";
+  const employmentValidationMessage = employment.message || (input.spouse ? spouseEmployment.message : "");
 
   const warmRentCents = toCents(input.warmRent);
   let housingShareCents = warmRentCents;
@@ -194,10 +223,16 @@ export function calculatePkh(input, law = LEGAL_DATA) {
     if (nextMonth(item.endMonth ?? "") && item.amount > 0) endingAmounts.set(item.endMonth, assertSafeCents((endingAmounts.get(item.endMonth) ?? 0) + toCents(item.amount)));
   }
   let endedCents = 0;
-  const futureRates = [...endingAmounts.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([endMonth, amountCents]) => {
+  const proposedFutureRates = [...endingAmounts.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([endMonth, amountCents]) => {
     endedCents = assertSafeCents(endedCents + amountCents);
     return { from: nextMonth(endMonth), monthlyRate: calculateMonthlyRateFromCents(disposableIncomeCents + endedCents, law.monthlyRate) };
   });
+  const forecastLimit = approvalMonth && /^\d{4}-(?:0[1-9]|1[0-2])$/.test(approvalMonth)
+    ? `${String(Number(approvalMonth.slice(0, 4)) + 4).padStart(4, "0")}-${approvalMonth.slice(5)}` : null;
+  const futurePlanNeedsReview = Boolean(forecastLimit && proposedFutureRates.some((step) => step.from > forecastLimit));
+  const futurePlanMessage = futurePlanNeedsReview
+    ? "Keine belastbare Staffelprognose: Ein Belastungsende liegt außerhalb von vier Jahren ab Bewilligung (§ 120 Abs. 1 ZPO). Die heutige Monatsrate bleibt berechnet; Folgeraten, Kostendeckung und Obergrenze sind offen. Eine spätere Nachprüfung nach § 120a ZPO ist gesondert zu prüfen." : "";
+  const futureRates = futurePlanNeedsReview ? [] : proposedFutureRates;
   const paymentPlan = calculatePaymentPlan({ monthlyRate, futureRates, approvalDate: input.approvalDate,
     paymentStartMonth: input.paymentStartMonth, remainingCostsCents, maximumInstallments: law.monthlyRate.maximumInstallments });
 
@@ -206,6 +241,10 @@ export function calculatePkh(input, law = LEGAL_DATA) {
     annualMonthlyAmount: fromCents(annualMonthlyCents),
     incomeAfterMandatory: fromCents(incomeAfterMandatoryCents),
     employmentAllowance: fromCents(employmentAllowanceCents),
+    employment, spouseEmployment, dependentResults, partyIncome,
+    dependentInputIncomplete: Boolean(dependentValidationMessage), dependentValidationMessage,
+    employmentInputIncomplete: Boolean(employmentValidationMessage), employmentValidationMessage,
+    futurePlanNeedsReview, futurePlanMessage, forecastLimit,
     partyAllowance: fromCents(partyAllowanceCents),
     spouseAllowance: fromCents(spouseAllowanceCents),
     dependentAllowance: fromCents(dependentAllowanceCents),
@@ -224,6 +263,7 @@ export function calculatePkh(input, law = LEGAL_DATA) {
     fourRateThreshold,
     costExclusion,
     ...paymentPlan,
+    ...(futurePlanNeedsReview ? { maximumContribution: null, installmentsToCoverCosts: null, costsCoveredWithinCap: null } : {}),
     futureRate: futureRates[0]?.monthlyRate ?? null,
     futureRateFrom: futureRates[0]?.from ?? null,
     futureRates,

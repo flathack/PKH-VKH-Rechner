@@ -26,6 +26,7 @@ export default function AmountInput({ id, label, value, onChange, hint, optional
   // Tastatureingaben behalten dagegen ihren unveränderten Text samt Dezimalkomma.
   if (draft.value !== value) setDraft({ value, text: value == null ? "" : String(value) });
   const parsed = parseAmount(draft.text, { optional, fractionDigits, min, max });
+  useEffect(() => { reportError(id, parsed.error ? `${label}: ${parsed.error}` : ""); }, [id, label, parsed.error, reportError]);
   useEffect(() => () => reportError(id, ""), [id, reportError]);
 
   return <label className="field" htmlFor={id}>

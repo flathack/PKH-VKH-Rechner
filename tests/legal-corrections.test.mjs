@@ -1,0 +1,124 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import { calculatePkh, calculateDependentDeduction, ALLOWANCE_SETS, legalDataForDate } from '../app/pkh-law.mjs';
+import { incomeForRecipient } from '../app/income-items.mjs';
+const base = {location:'bund', netIncome:2000, otherIncome:0, annualPayments:0, mandatoryDeductions:0,
+  employed:false, spouse:false, dependents:[], warmRent:0, housingMode:'full', householdPeople:1,
+  insuranceAndWork:0, additionalMaintenance:0, additionalNeeds:0, specialBurdens:0, customDeductions:[],
+  approvalDate:'2026-10-19', assetContribution:0, estimatedCosts:1000};
+
+test('Jahreseinnahmen werden je Empfänger gemeinsam gerundet (#20)', () => {
+  for (const recipient of ['party','spouse','dependent-1']) {
+    assert.equal(incomeForRecipient([{recipient, period:'annual', amount:1000.02},{recipient, period:'annual', amount:1000.02}],recipient),166.67);
+  }
+});
+test('Sammelzahlung und jährliche Zeilen bilden dieselbe Einkommenssumme (#20)', () => {
+  for (const [annualPayments,incomeItems] of [[2000.04,[]],[1000.02,[{recipient:'party',period:'annual',amount:1000.02}]],[0,[{recipient:'party',period:'annual',amount:1000.02},{recipient:'party',period:'annual',amount:1000.02}]]]) {
+    const r=calculatePkh({...base,netIncome:754.32,employed:true,annualPayments,incomeItems});
+    assert.equal(r.grossMonthlyIncome,920.99);assert.equal(r.monthlyRate,0);
+  }
+});
+test('Wechselmodell: halber Freibetrag und tatsächlicher Barunterhalt (#21)', () => {
+  const person={kind:'youngChild',deductionMode:'shared',ownIncome:0,ownIncomeDeductions:0,maintenancePayment:0};
+  assert.equal(calculateDependentDeduction(person,ALLOWANCE_SETS.bund),196.5);
+  assert.equal(calculatePkh({...base,dependents:[person]}).monthlyRate,884);
+  assert.equal(calculateDependentDeduction({...person,maintenancePayment:200},ALLOWANCE_SETS.bund),396.5);
+});
+test('Wechselmodell mit Kindeseinkommen braucht dokumentierten geprüften Ansatz (#21)', () => {
+  const person={kind:'child',deductionMode:'shared',ownIncome:100,ownIncomeDeductions:0,maintenancePayment:50};
+  assert.equal(calculatePkh({...base,dependents:[person]}).dependentInputIncomplete,true);
+  assert.equal(calculatePkh({...base,dependents:[{...person,sharedCareAllowance:120,sharedCareNote:'Kindergeld und Einkommen geprüft'}]}).dependentAllowance,170);
+});
+test('Weit entfernte Belastungsenden ergeben keine ungeprüfte Kostendeckung (#22)', () => {
+  const r=calculatePkh({...base,specialBurdens:1400,specialEndDate:'2035-12'});
+  assert.equal(r.monthlyRate,0);assert.equal(r.futurePlanNeedsReview,true);
+  assert.equal(r.maximumContribution,null);assert.equal(r.costsCoveredWithinCap,null);
+  assert.deepEqual(r.futureRates,[]);
+});
+test('Staffelgrenze betrifft Änderungen, nicht die Zahl positiver Zahlungsmonate (#22)', () => {
+  const valid=calculatePkh({...base,specialBurdens:1400,specialEndDate:'2030-09'});
+  assert.equal(valid.futurePlanNeedsReview,false);assert.equal(valid.maximumContribution,51888);
+  const outside=calculatePkh({...base,specialBurdens:1400,specialEndDate:'2030-10'});
+  assert.equal(outside.futurePlanNeedsReview,true);
+});
+test('Erwerbstätigenfreibetrag: volle, begrenzte und geprüfte Auffassung (#23)', () => {
+  const mixed={...base,netIncome:100,otherIncome:1000,employed:true};
+  assert.equal(calculatePkh(mixed).monthlyRate,99);
+  assert.equal(calculatePkh({...mixed,employmentMode:'limited',earnedIncome:100}).monthlyRate,190);
+  assert.equal(calculatePkh({...mixed,employmentMode:'limited'}).employmentInputIncomplete,true);
+  assert.equal(calculatePkh({...mixed,employmentMode:'reviewed',reviewedEmploymentAllowance:80,employmentNote:'Gerichtlich geprüfter Betrag'}).monthlyRate,200);
+});
+
+test('Aufteilung jährlicher Centbeträge bleibt für alle Empfänger invariant (#20)', () => {
+  for (const recipient of ['party','spouse','dependent-1']) {
+    for (const cents of [1,6,11,119999,120000,120001,200004,99999999]) {
+      const first=Math.floor(cents/3), second=Math.floor((cents-first)/2), third=cents-first-second;
+      const single=[{recipient,period:'annual',amount:cents/100}];
+      const split=[first,second,third].map((value)=>({recipient,period:'annual',amount:value/100}));
+      assert.equal(incomeForRecipient(split,recipient),incomeForRecipient(single,recipient));
+      const person={id:1,kind:'youngChild',ownIncome:0,ownIncomeDeductions:0};
+      const configuration={...base,spouse:true,spouseIncome:0,dependents:[person]};
+      const a=calculatePkh({...configuration,incomeItems:single});
+      const b=calculatePkh({...configuration,incomeItems:split});
+      for(const key of ['grossMonthlyIncome','spouseAllowance','dependentAllowance','monthlyRate']) assert.equal(a[key],b[key],`${recipient}: ${key}`);
+    }
+  }
+});
+test('Einnahmen werden einmalig und nur beim Empfänger berücksichtigt (#20)', () => {
+  const incomeItems=[{recipient:'party',period:'annual',amount:1200},{recipient:'party',period:'monthly',amount:50},
+    {recipient:'spouse',period:'annual',amount:1200},{recipient:'dependent-1',period:'annual',amount:1200}];
+  const r=calculatePkh({...base,otherIncome:10,annualPayments:1200,incomeItems,spouse:true,spouseIncome:400,
+    dependents:[{id:1,kind:'child',ownIncome:100,ownIncomeDeductions:0}]});
+  assert.equal(r.grossMonthlyIncome,2260);assert.equal(r.spouseAllowance,119);assert.equal(r.dependentAllowance,229);
+});
+test('Jahresumrechnung bleibt auch an der 600-Euro-Schwelle stabil (#20)', () => {
+  for(const [netIncome,expected] of [[1052.32,299],[1052.33,300],[1052.34,300],[1053.33,301]]) {
+    const incomeItems=[{recipient:'party',period:'annual',amount:1000.02},{recipient:'party',period:'annual',amount:1000.02}];
+    assert.equal(calculatePkh({...base,netIncome,incomeItems}).monthlyRate,expected);
+  }
+});
+test('Wechselmodell: Einkommen, Altersgrenzen und manuelle Werte werden abgesichert (#21)', () => {
+  const person={id:1,kind:'youngChild',deductionMode:'shared',ownIncome:0,ownIncomeDeductions:0,maintenancePayment:0};
+  for(const patch of [{kind:'adult'},{sharedCareAllowance:197,sharedCareNote:'geprüft'},{sharedCareAllowance:100},
+    {sharedCareAllowance:-1,sharedCareNote:'geprüft'}]) assert.equal(calculatePkh({...base,dependents:[{...person,...patch}]}).dependentInputIncomplete,true);
+  assert.equal(calculatePkh({...base,dependents:[person],incomeItems:[{recipient:'dependent-1',period:'annual',amount:1200}]}).dependentInputIncomplete,true);
+  assert.equal(calculatePkh({...base,dependents:[{...person,sharedCareAllowance:0,sharedCareNote:'Anrechnung vollständig geprüft'}]}).dependentAllowance,0);
+  const two=calculatePkh({...base,dependents:[person,{...person,id:2,kind:'teen',maintenancePayment:50}]});
+  assert.equal(two.dependentAllowance,196.5+259+50);
+});
+test('Region und historischer Rechtsstand bestimmen den Halbansatz (#21)', () => {
+  for(const date of ['2025-10-19','2026-10-19']) {
+    const law=legalDataForDate(date);
+    for(const [location,expected] of [['bund',196.5],['ffb',204],['muenchen',203.5],['landkreisMuenchen',202]]) {
+      assert.equal(calculatePkh({...base,approvalDate:date,location,dependents:[{kind:'youngChild',deductionMode:'shared',ownIncome:0,maintenancePayment:0}]},law).dependentAllowance,expected);
+    }
+  }
+});
+test('Staffelprognose bleibt bei verschobenem Zahlungsbeginn an die Bewilligung gebunden (#22)', () => {
+  const r=calculatePkh({...base,specialBurdens:1400,specialEndDate:'2035-12',paymentStartMonth:'2035-12'});
+  assert.equal(r.futurePlanNeedsReview,true);assert.equal(r.installmentsToCoverCosts,null);
+  const mixed=calculatePkh({...base,specialBurdens:100,specialEndDate:'2026-10',customDeductions:[{amount:50,endMonth:'2035-12'}]});
+  assert.equal(mixed.futurePlanNeedsReview,true);assert.deepEqual(mixed.futureRates,[]);
+});
+test('Erwerbstätigenannahmen prüfen Null, Grenzen, fehlende Angaben und inaktive Felder (#23)', () => {
+  for(const [earnedIncome,expected] of [[0,0],[100,100],[282,282],[400,282]]) {
+    assert.equal(calculatePkh({...base,employed:true,employmentMode:'limited',earnedIncome}).employmentAllowance,expected);
+  }
+  for(const patch of [{employmentMode:'limited',earnedIncome:2001},{employmentMode:'reviewed',reviewedEmploymentAllowance:283,employmentNote:'geprüft'},
+    {employmentMode:'reviewed',reviewedEmploymentAllowance:0},{employmentMode:'invalid'}]) {
+    assert.equal(calculatePkh({...base,employed:true,...patch}).employmentInputIncomplete,true);
+  }
+  assert.equal(calculatePkh({...base,employed:false,employmentMode:'limited'}).employmentInputIncomplete,false);
+  assert.equal(calculatePkh({...base,employed:true,employmentMode:'reviewed',reviewedEmploymentAllowance:0,employmentNote:'geprüft'}).employmentAllowance,0);
+});
+test('Bereinigung bei Angehörigen ist separat dokumentiert und vermeidet Doppelabzug (#23)', () => {
+  const spouse={...base,spouse:true,spouseIncome:600,spouseEmployed:true,
+    spouseEmployment:{employmentMode:'limited',earnedIncome:100,employmentNote:'Anwendung für Partnerperson geprüft'}};
+  assert.equal(calculatePkh(spouse).spouseAllowance,119);
+  assert.equal(calculatePkh({...spouse,spouseIncomeAlreadyAdjusted:true}).spouseAllowance,19);
+  assert.equal(calculatePkh({...spouse,spouseEmployment:{employmentMode:'limited',earnedIncome:100}}).employmentInputIncomplete,true);
+  const person={kind:'adultEmployed',ownIncome:600,ownIncomeDeductions:0,employmentMode:'limited',earnedIncome:100,employmentNote:'Anwendung geprüft'};
+  assert.equal(calculateDependentDeduction(person,ALLOWANCE_SETS.bund),0);
+  assert.equal(calculateDependentDeduction({...person,employmentMode:'full'},ALLOWANCE_SETS.bund),178);
+  assert.equal(calculatePkh({...base,dependents:[{...person,incomeAlreadyAdjusted:true}]}).dependentInputIncomplete,false);
+});

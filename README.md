@@ -48,6 +48,50 @@ Angemessenheit von Abzügen, Belege und die gerichtliche Festsetzung bleiben
 Einzelfallentscheidungen. Fehlt ein unterstützter Rechtsstand oder eine für die
 gewählte Wohnkostenaufteilung notwendige Angabe, ist der Ausdruck gesperrt.
 
+## Berechnungsannahmen seit v0.5.2
+
+- **Jahreseinnahmen:** Je Empfänger werden alle Jahresbeträge zuerst in Cent
+  addiert, einschließlich der Sammel-Sonderzahlung der Partei. Erst der gemeinsame
+  Monatsanteil wird auf Cent gerundet. Monatliche Positionen werden danach addiert.
+  Einzelne angezeigte Monatsanteile sind gerundete Anzeigewerte. Jahressumme,
+  gemeinsamer Monatsanteil und gegebenenfalls Rundungsausgleich stehen im Ausdruck.
+- **Paritätisches Wechselmodell:** Bei minderjährigen Kindern ohne eigenes Einkommen
+  ist der Ansatz ein halber Altersfreibetrag zuzüglich tatsächlich gezahlten
+  Barunterhalts. Bei eigenem Einkommen oder zugeordnetem Kindergeld sind ein
+  fachlich geprüfter hälftiger Restfreibetrag und ein Prüfvermerk erforderlich.
+  Der Betrag ist auf den halben örtlichen Altersfreibetrag begrenzt. Die Anwendung
+  halbiert Kindergeld, Mehrbedarfe und Wohnkosten nicht automatisch. Grundlage:
+  [BGH XII ZB 276/21](https://juris.bundesgerichtshof.de/cgi-bin/rechtsprechung/document.py?Gericht=bgh&Art=en&nr=127302)
+  und [XII ZB 19/21](https://juris.bundesgerichtshof.de/cgi-bin/rechtsprechung/document.py?Gericht=bgh&Art=en&nr=127804).
+- **Staffelprognose:** Die automatische Vorschau für die Erstbewilligung nach
+  [§ 120 Abs. 1 ZPO](https://www.gesetze-im-internet.de/zpo/__120.html) berücksichtigt
+  Erhöhungen höchstens bis vier Jahre ab Bewilligung. Weil Belastungen als letzter
+  belasteter Monat erfasst werden, darf der erste erhöhte Zahlungsmonat höchstens
+  im entsprechenden Monat vier Jahre später liegen. Weiter entfernte Endmonate
+  bleiben als Eingabe erhalten; heutige Rate und Vier-Raten-Vergleich bleiben
+  berechnet, während Folgeraten, Obergrenze und Kostendeckung ausdrücklich offen
+  bleiben. Der Zahlungsbeginn verschiebt den Prognosehorizont nicht.
+  Die 48 positiven Zahlungsraten sind kein Höchstzeitraum von 48 Kalendermonaten.
+  Nachprüfungen nach [§ 120a ZPO](https://www.gesetze-im-internet.de/zpo/__120a.html)
+  einschließlich früherer Zahlungen, Rechtskraft und Verfahrensbeendigung werden
+  nicht als neuer Erstbewilligungsplan berechnet und sind gesondert zu prüfen.
+- **Erwerbstätigenfreibetrag:** Standard ist der sichtbar ausgewiesene volle örtliche
+  Betrag. Bei geringem Erwerbseinkommen und weiteren Einkünften ist die Rechtsprechung
+  uneinheitlich: [OVG Sachsen 5 A 1187/17](https://www.justiz.sachsen.de/ovgentschweb/folder.phtml?id=30)
+  lässt den überschießenden Freibetrag auch andere Einkommensarten mindern;
+  [OLG Bamberg 2 UF 107/25 e](https://www.gesetze-bayern.de/Content/Document/Y-300-Z-BECKRS-B-2025-N-27030?hl=true)
+  begrenzt ihn auf das Erwerbseinkommen und nennt ausdrücklich Gegenauffassungen.
+  Eine höchstrichterliche Klärung wurde am 19.10.2026 nicht verifiziert. Der begrenzte
+  Ansatz benötigt deshalb einen ausdrücklich angegebenen bereinigten Erwerbsanteil;
+  ein abweichender geprüfter Betrag benötigt einen Prüfvermerk. Diese Steuerwerte
+  werden nicht erneut als Einkommen oder weitere Abzüge addiert. Bei Angehörigen
+  ist die Anwendung gesondert zu prüfen und für einen begrenzten Ansatz zu begründen.
+  Bereits vollständig bereinigtes Einkommen erhält keinen zweiten Abzug.
+  Gewählter Ansatz, tatsächlicher Abzugsbetrag, Quelle und Prüfvermerk werden gedruckt.
+
+Die Regressionstests in `tests/legal-corrections.test.mjs` und
+`tests/browser/legal-corrections.spec.mjs` sichern diese Annahmen und Grenzfälle ab.
+
 ## Automatische Rechtsstandsaktualisierung
 
 Die Wartungsautomation prüft amtliche Quellen in Zeitfenstern rund um den

@@ -15,6 +15,15 @@ Dieses Verfahren aktualisiert den PKH/VKH-Rechner nur auf Grundlage eines vollst
 `app/legal-history.json` enthält unveränderliche, amtlich geprüfte frühere
 Jahrgänge für Berechnungen nach dem Bewilligungsdatum.
 
+## Geschützte fachliche Regressionen
+
+Seit v0.5.2 gehören die Issue-Fälle #20–#23 zum Release-Gate. Bei Rechtswertänderungen
+müssen Jahresaggregation je Empfänger, regionale Halbfreibeträge im Wechselmodell,
+Prognosehorizont der Erstbewilligung und alle gewählten Erwerbstätigenannahmen weiter
+funktionieren. Die detaillierten Regeln, Quellen und die Abgrenzung zur Nachprüfung
+stehen im Abschnitt „Berechnungsannahmen seit v0.5.2“ der README. Ein neues Jahr allein
+klärt keinen Rechtsprechungsstreit und autorisiert keine Änderung dieser Annahmen.
+
 ## Zeitfenster richtig einordnen
 
 § 115 Abs. 1 Satz 6 ZPO verpflichtet das zuständige Bundesministerium, die maßgebenden Beträge bei jeder Neufestsetzung oder Fortschreibung im Bundesgesetzblatt bekannt zu machen. Die amtliche Fußnote zu § 115 ZPO weist für 2021 bis 2026 jeweils Werte **ab 1. Januar** aus.

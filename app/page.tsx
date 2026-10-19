@@ -2,22 +2,25 @@
 
 import { useCallback, useState } from "react";
 import AmountInput, { AmountValidationContext } from "./amount-input";
-import { ALLOWANCE_SETS as currentAllowanceSets, LEGAL_DATA, calculateDependentDeduction, calculatePkh, legalDataForDate } from "./pkh-law.mjs";
-import { incomeForRecipient, monthlyIncome } from "./income-items.mjs";
+import { ALLOWANCE_SETS as currentAllowanceSets, LEGAL_DATA, calculateDependentDeduction, dependentDetails, calculatePkh, legalDataForDate } from "./pkh-law.mjs";
+import { incomeForRecipient, incomeSummary, monthlyIncome } from "./income-items.mjs";
 import { BRAND_ICON_SVG } from "./branding.mjs";
 import ThemeSelector from "./theme-selector";
 import CalculatorInfo from "./calculator-info";
+import EmploymentFields, { emptyEmployment, type EmploymentFieldsValue } from "./employment-fields";
 
 type LocationKey = "bund" | "ffb" | "muenchen" | "landkreisMuenchen";
 type DependentKind = "adult" | "adultEmployed" | "teen" | "teenEmployed" | "child" | "youngChild";
 
-type Dependent = {
+type Dependent = EmploymentFieldsValue & {
   id: number;
   kind: DependentKind;
   ownIncome: number;
   ownIncomeDeductions: number;
   incomeAlreadyAdjusted: boolean;
-  deductionMode: "allowance" | "maintenance";
+  deductionMode: "allowance" | "maintenance" | "shared";
+  sharedCareAllowance: number | null;
+  sharedCareNote: string;
   maintenancePayment: number;
 };
 
@@ -70,6 +73,10 @@ const compactEuro = new Intl.NumberFormat("de-DE", {
   maximumFractionDigits: 0,
 });
 
+function baseDependentAllowance(kind: DependentKind, allowances: typeof currentAllowanceSets.bund) {
+  return allowances[kind === "adultEmployed" ? "adult" : kind === "teenEmployed" ? "teen" : kind];
+}
+
 const todayIso = () => new Date().toLocaleDateString("sv-SE");
 const formatIsoDate = (date: string) => date && /^\d{4}-\d{2}-\d{2}$/.test(date) ? `${date.slice(8, 10)}.${date.slice(5, 7)}.${date.slice(0, 4)}` : "—";
 const housingLabels = { full: "voller Ansatz", income: "Aufteilung nach Einkommen", heads: "Aufteilung nach Köpfen", manual: "begründeter Anteil" } as const;
@@ -121,6 +128,8 @@ export default function Home() {
   const [annualPayments, setAnnualPayments] = useState(0);
   const [mandatoryDeductions, setMandatoryDeductions] = useState(0);
   const [employed, setEmployed] = useState(false);
+  const [employment, setEmployment] = useState<EmploymentFieldsValue>(emptyEmployment);
+  const [spouseEmployment, setSpouseEmployment] = useState<EmploymentFieldsValue>(emptyEmployment);
   const [spouse, setSpouse] = useState(false);
   const [spouseEmployed, setSpouseEmployed] = useState(false);
   const [spouseIncome, setSpouseIncome] = useState(0);
@@ -165,16 +174,19 @@ export default function Home() {
   const calculation = calculatePkh({
     location,
     netIncome,
-    otherIncome: otherIncome + assignedIncome("party"),
+    otherIncome,
+    incomeItems,
+    ...employment,
+    spouseEmployment,
     annualPayments,
     mandatoryDeductions,
     employed,
     spouse,
     spouseEmployed,
-    spouseIncome: spouseIncome + assignedIncome("spouse"),
+    spouseIncome,
     spouseIncomeDeductions,
     spouseIncomeAlreadyAdjusted,
-    dependents: effectiveDependents,
+    dependents,
     warmRent,
     housingMode,
     otherHouseholdIncome,
@@ -192,7 +204,7 @@ export default function Home() {
     estimatedCosts,
     customDeductions,
   }, law ?? LEGAL_DATA);
-  const validationMessage = Object.values(fieldErrors)[0] || (!law ? "Für dieses Bewilligungsdatum ist kein geprüfter Rechtsstand hinterlegt."
+  const validationMessage = Object.values(fieldErrors)[0] || calculation.dependentValidationMessage || calculation.employmentValidationMessage || (!law ? "Für dieses Bewilligungsdatum ist kein geprüfter Rechtsstand hinterlegt."
     : calculation.invalidBurdenEndInput ? "Bitte einen gültigen letzten Monat für die befristeten Belastungen wählen."
       : calculation.expiredBurdenInput ? "Eine befristete Belastung endet vor dem Bewilligungsmonat."
       : calculation.housingIncomplete ? "Für die gewählte Wohnkostenaufteilung fehlt eine Angabe."
@@ -205,6 +217,8 @@ export default function Home() {
 
   const addDependent = () => {
     setDependents((current) => [...current, {
+      ...emptyEmployment,
+      sharedCareAllowance: null, sharedCareNote: "",
       id: nextEntryId++,
       kind: "youngChild",
       ownIncome: 0,
@@ -235,6 +249,8 @@ export default function Home() {
     setAnnualPayments(0);
     setMandatoryDeductions(0);
     setEmployed(false);
+    setEmployment(emptyEmployment);
+    setSpouseEmployment(emptyEmployment);
     setSpouse(false);
     setSpouseEmployed(false);
     setSpouseIncome(0);
@@ -265,6 +281,11 @@ export default function Home() {
     setFieldErrors({});
     setFormRevision((current) => current + 1);
   };
+
+  const annualSummaries = ["party", ...(spouse ? ["spouse"] : []), ...dependents.map((person) => `dependent-${person.id}`)].map((recipient) => ({
+    recipient, label: recipient === "party" ? "Partei" : recipient === "spouse" ? "Partnerperson" : `Person ${dependents.findIndex((person) => recipient === `dependent-${person.id}`) + 1}`,
+    ...incomeSummary(incomeItems, recipient, recipient === "party" ? annualPayments : 0),
+  })).filter((summary) => summary.annualAmount > 0);
 
   const printDate = new Intl.DateTimeFormat("de-DE", {
     day: "2-digit",
@@ -335,24 +356,26 @@ export default function Home() {
               <tr><th>Sonstige monatliche Einnahmen (Sammelbetrag){evidenceNotes.otherIncome ? ` – Beleg: ${evidenceNotes.otherIncome}` : ""}</th><td>{euro.format(otherIncome)}</td></tr>
               {incomeItems.filter((item) => item.recipient === "party").map((item) => <tr key={item.id}><th>{item.description || "Weitere Einnahme"} (Partei, {item.period === "annual" ? `Jahresbetrag ${euro.format(item.amount)} / 12, monatlich gerundet` : "monatlich"}){item.evidence ? ` – Beleg: ${item.evidence}` : ""}</th><td>{euro.format(monthlyIncome(item))}</td></tr>)}
               <tr><th>Jährliche Sonderzahlungen {euro.format(annualPayments)} / 12, monatlicher Anteil (gerundet){evidenceNotes.annualPayments ? ` – Beleg: ${evidenceNotes.annualPayments}` : ""}</th><td>{euro.format(calculation.annualMonthlyAmount)}</td></tr>
+              {annualSummaries.filter((summary) => summary.recipient === "party" && summary.roundingAdjustment !== 0).map((summary) => <tr key={summary.recipient}><th>Rundungsausgleich: Jahresbeträge gemeinsam durch 12 geteilt, erst danach auf Cent gerundet</th><td>{euro.format(summary.roundingAdjustment)}</td></tr>)}
               <tr className="document-subtotal"><th>Summe der monatlichen Einkünfte</th><td>{euro.format(calculation.grossMonthlyIncome)}</td></tr>
             </tbody>
           </table>
         </section>
 
+        {annualSummaries.map((summary) => <p className="document-context" key={summary.recipient}>Jahresumrechnung {summary.label}: Jahressumme {euro.format(summary.annualAmount)} / 12 = {euro.format(summary.annualMonthlyAmount)} monatlich, gemeinsam auf Cent gerundet. Einzeln angezeigte Monatsanteile sind gerundete Anzeigewerte{summary.roundingAdjustment !== 0 ? `; Rundungsausgleich ${euro.format(summary.roundingAdjustment)}` : ""}.</p>)}
         <section className="document-section">
           <h2>2. Abzüge und Freibeträge</h2>
           <p className="document-context">Wohnsitz: {allowanceSets[location].label}</p>
           <table>
             <tbody>
               <tr><th>Steuern und Sozialversicherungsbeiträge (§ 82 Abs. 2 Nr. 1–2 SGB XII){evidenceNotes.mandatoryDeductions ? ` – Beleg: ${evidenceNotes.mandatoryDeductions}` : ""}</th><td>− {euro.format(mandatoryDeductions)}</td></tr>
-              <tr><th>Erwerbstätigenfreibetrag</th><td>− {euro.format(calculation.employmentAllowance)}</td></tr>
+              <tr><th>Erwerbstätigenfreibetrag{employed ? ` (${calculation.employment.description})` : ""}</th><td>− {euro.format(calculation.employmentAllowance)}</td></tr>
               <tr><th>Freibetrag der Partei</th><td>− {euro.format(calculation.partyAllowance)}</td></tr>
-              {spouse ? <tr><th>Freibetrag der Ehe-/Lebenspartnerperson: Ausgangsbetrag {euro.format(allowanceSets[location].party)}, Einkommen {euro.format(spouseIncome + assignedIncome("spouse"))}, eigene Abzüge {spouseIncomeAlreadyAdjusted ? "bereits berücksichtigt" : euro.format(spouseIncomeDeductions)}, Erwerbstätigenfreibetrag {spouseEmployed && !spouseIncomeAlreadyAdjusted ? euro.format(allowanceSets[location].employed) : "kein weiterer Ansatz"}, anrechenbar {euro.format(Math.max(0, allowanceSets[location].party - calculation.spouseAllowance))}</th><td>− {euro.format(calculation.spouseAllowance)}</td></tr> : null}
+              {spouse ? <tr><th>Freibetrag der Ehe-/Lebenspartnerperson: Ausgangsbetrag {euro.format(allowanceSets[location].party)}, Einkommen {euro.format(spouseIncome + assignedIncome("spouse"))}, eigene Abzüge {spouseIncomeAlreadyAdjusted ? "bereits berücksichtigt" : euro.format(spouseIncomeDeductions)}, Erwerbstätigenfreibetrag {spouseEmployed && !spouseIncomeAlreadyAdjusted ? `${euro.format(calculation.spouseEmployment.amount)} (${calculation.spouseEmployment.description})` : "kein weiterer Ansatz"}, anrechenbar {euro.format(Math.max(0, allowanceSets[location].party - calculation.spouseAllowance))}</th><td>− {euro.format(calculation.spouseAllowance)}</td></tr> : null}
               {incomeItems.filter((item) => item.recipient !== "party").map((item) => <tr key={item.id}><th>Bei {item.recipient === "spouse" ? "Partnerperson" : `Person ${dependents.findIndex((person) => item.recipient === `dependent-${person.id}`) + 1}`} {dependents.some((person) => item.recipient === `dependent-${person.id}` && person.deductionMode === "maintenance") ? "erfasst, bei Unterhaltszahlung nicht verrechnet" : "angerechnet"}: {item.description || "Einnahme"} ({item.period === "annual" ? `Jahresbetrag ${euro.format(item.amount)} / 12, monatlich gerundet` : "monatlich"}){item.evidence ? ` – Beleg: ${item.evidence}` : ""}</th><td>{euro.format(monthlyIncome(item))}</td></tr>)}
               {effectiveDependents.map((person, index) => (
                 <tr key={person.id}>
-                  <th>{person.deductionMode === "maintenance" ? "Unterhaltszahlung" : "Freibetrag"} für unterhaltene Person {index + 1}: {dependentLabels[person.kind]}{person.deductionMode === "allowance" ? `, eigenes Einkommen ${euro.format(person.ownIncome)}, weitere Abzüge ${person.incomeAlreadyAdjusted ? "bereits berücksichtigt" : euro.format(person.ownIncomeDeductions)}, Erwerbstätigenfreibetrag ${(person.kind === "adultEmployed" || person.kind === "teenEmployed") && !person.incomeAlreadyAdjusted ? euro.format(allowanceSets[location].employed) : "kein weiterer Ansatz"}` : ""}</th>
+                  <th>{person.deductionMode === "shared" ? "Wechselmodell" : person.deductionMode === "maintenance" ? "Unterhaltszahlung" : "Freibetrag"} für unterhaltene Person {index + 1}: {dependentLabels[person.kind]}{person.deductionMode === "allowance" ? `, eigenes Einkommen ${euro.format(person.ownIncome)}, weitere Abzüge ${person.incomeAlreadyAdjusted ? "bereits berücksichtigt" : euro.format(person.ownIncomeDeductions)}, Erwerbstätigenfreibetrag ${(person.kind === "adultEmployed" || person.kind === "teenEmployed") && !person.incomeAlreadyAdjusted ? `${euro.format(calculation.dependentResults[index].employment.amount)} (${calculation.dependentResults[index].employment.description})` : "kein weiterer Ansatz"}` : person.deductionMode === "shared" ? `, hälftiger Altersfreibetrag ${euro.format(baseDependentAllowance(person.kind, allowanceSets[location]) / 2)}, eigenes Einkommen inkl. zugeordneter Einnahmen ${euro.format(person.ownIncome)}, angesetzter hälftiger Freibetrag ${euro.format(person.sharedCareAllowance ?? baseDependentAllowance(person.kind, allowanceSets[location]) / 2)}, tatsächlicher Barunterhalt ${euro.format(person.maintenancePayment)}; ${person.sharedCareNote || "ohne Kindeseinkommen; automatischer Halbansatz"}; BGH XII ZB 276/21 und XII ZB 19/21` : ""}</th>
                   <td>− {euro.format(calculateDependentDeduction(person, allowanceSets[location]))}</td>
                 </tr>
               ))}
@@ -390,8 +413,9 @@ export default function Home() {
           {calculation.travelCosts.reimbursementExcess > 0 ? <p>Fahrtkostenerstattung: Überschuss von {euro.format(calculation.travelCosts.reimbursementExcess)} über den Fahrtkostenansatz. Anrechnung als Einkommen gesondert prüfen.</p> : null}
           <p>Vermögenseinsatz: {calculation.assetContribution == null ? "nicht angegeben" : euro.format(calculation.assetContribution)} · Voraussichtliche Kosten: {calculation.estimatedCosts == null ? "nicht angegeben" : euro.format(calculation.estimatedCosts)}</p>
           <p>Vier Monatsraten zuzüglich Vermögenseinsatz: {euro.format(calculation.fourRateThreshold)}. {calculation.costExclusion == null ? "Kostenvergleich offen." : calculation.costExclusion ? "Kosten übersteigen diesen Betrag nicht; Ausschluss nach § 115 Abs. 4 ZPO prüfen." : "Kosten übersteigen diesen Betrag."}</p>
-          {calculation.installmentsToCoverCosts != null ? <p>Rechnerische Kostendeckung nach {calculation.installmentsToCoverCosts} Zahlungsraten nach Vermögenseinsatz. {calculation.costsCoveredWithinCap ? `Innerhalb der Grenze von ${monthlyRate.maximumInstallments} Raten.` : `Außerhalb der Grenze von ${monthlyRate.maximumInstallments} Raten.`}</p> : calculation.estimatedCosts != null && calculation.assetContribution != null ? <p>Mit diesem Ratenplan keine Kostendeckung durch Monatsraten.</p> : null}
-          <p>Ratenplanung ab {calculation.paymentPlanStartMonth ?? "Bewilligung"}{paymentStartMonth ? " (angegebener Ratenbeginn)" : " (Annahme: Bewilligungsmonat)"}. Monate ohne Zahlung verbrauchen keine Zahlungsrate; spätere Ratenstufen werden bei der Kostendeckung berücksichtigt.</p>
+          {calculation.futurePlanNeedsReview ? <p><strong>{calculation.futurePlanMessage}</strong></p> : calculation.installmentsToCoverCosts != null ? <p>Rechnerische Kostendeckung nach {calculation.installmentsToCoverCosts} Zahlungsraten nach Vermögenseinsatz. {calculation.costsCoveredWithinCap ? `Innerhalb der Grenze von ${monthlyRate.maximumInstallments} Raten.` : `Außerhalb der Grenze von ${monthlyRate.maximumInstallments} Raten.`}</p> : calculation.estimatedCosts != null && calculation.assetContribution != null ? <p>Mit diesem Ratenplan keine Kostendeckung durch Monatsraten.</p> : null}
+          <p>Planungsgrundlage: Erstbewilligung und vorweggenommene Staffel nach § 120 Abs. 1 ZPO. Nachprüfungen bestehender Bewilligungen nach § 120a ZPO einschließlich früherer Zahlungen und Verfahrensbeendigung sind gesondert zu prüfen.</p>
+          <p>Ratenplanung ab {calculation.paymentPlanStartMonth ?? "Bewilligung"}{paymentStartMonth ? " (angegebener Ratenbeginn)" : " (Annahme: Bewilligungsmonat)"}. Monate ohne Zahlung verbrauchen keine Zahlungsrate. {calculation.futurePlanNeedsReview ? "Die Staffelprognose ist offen; es wird keine Kostendeckung aus ungeprüften späteren Raten ausgewiesen." : "Spätere Ratenstufen werden bei der Kostendeckung berücksichtigt."}</p>
           {calculation.futureRates.map((step) => <p key={step.from}>Nach Wegfall befristeter Belastungen ab {step.from}: voraussichtlich {euro.format(step.monthlyRate)} monatlich.</p>)}
           <p>Wohnkosten angemessen geprüft: {housingAppropriate ? "ja" : "offen"}. {assessmentNote}</p>
           {incomplete ? <p><strong>Berechnung unvollständig: {validationMessage}</strong></p> : null}
@@ -449,8 +473,10 @@ export default function Home() {
             <label className="switch-row">
               <input type="checkbox" checked={employed} onChange={(event) => setEmployed(event.target.checked)} />
               <span className="switch" aria-hidden="true" />
-              <span><strong>Partei ist erwerbstätig</strong><small>Erwerbstätigenfreibetrag: {compactEuro.format(allowanceSets[location].employed)}</small></span>
+              <span><strong>Partei ist erwerbstätig</strong><small>Nur bei tatsächlich erzielten Erwerbseinkünften. Örtlicher Erwerbstätigenfreibetrag: {compactEuro.format(allowanceSets[location].employed)}</small></span>
             </label>
+            {employed ? <EmploymentFields prefix="party" value={employment} standard={allowanceSets[location].employed} onChange={(patch) => setEmployment((current) => ({ ...current, ...patch }))} /> : null}
+            {annualSummaries.filter((summary) => summary.recipient === "party").map((summary) => <p className="calculation-note" key={summary.recipient}>Jahressumme {euro.format(summary.annualAmount)} / 12 = {euro.format(summary.annualMonthlyAmount)} monatlich. Jahresbeträge werden gemeinsam auf Cent gerundet.</p>)}
           </section>
 
           <section className="form-card" id="unterhalt">
@@ -486,6 +512,7 @@ export default function Home() {
                   <span className="switch" aria-hidden="true" />
                   <span><strong>Partnerperson ist erwerbstätig</strong><small>Bei nicht bereinigtem Einkommen um {compactEuro.format(allowanceSets[location].employed)} bereinigen.</small></span>
                 </label>
+                {spouseEmployed && !spouseIncomeAlreadyAdjusted ? <EmploymentFields prefix="spouse" relative value={spouseEmployment} standard={allowanceSets[location].employed} onChange={(patch) => setSpouseEmployment((current) => ({ ...current, ...patch }))} /> : null}
                 <div className="sub-result"><span>Verbleibender Freibetrag</span><strong>{euro.format(calculation.spouseAllowance)}</strong></div>
               </div>
             ) : null}
@@ -512,6 +539,7 @@ export default function Home() {
                       <select value={person.deductionMode} onChange={(event) => updateDependent(person.id, { deductionMode: event.target.value as Dependent["deductionMode"] })}>
                         <option value="allowance">Freibetrag verwenden</option>
                         <option value="maintenance">Unterhaltszahlung verwenden</option>
+                        <option value="shared">Paritätisches Wechselmodell (minderjährig)</option>
                       </select>
                     </label>
                     {person.deductionMode === "maintenance" ? (
@@ -519,14 +547,21 @@ export default function Home() {
                     ) : (
                       <MoneyInput id={`dependent-income-${person.id}`} label="Monatliches eigenes Einkommen" value={person.ownIncome} onChange={(value) => updateDependent(person.id, { ownIncome: value })} />
                     )}
+                    {person.deductionMode === "shared" ? <>
+                      <MoneyInput id={`shared-maintenance-${person.id}`} label="Tatsächlich gezahlter Barunterhalt" value={person.maintenancePayment} onChange={(value) => updateDependent(person.id, { maintenancePayment: value })} />
+                      <AmountInput id={`shared-allowance-${person.id}`} label="Geprüfter hälftiger Freibetrag nach Einkommensanrechnung" value={person.sharedCareAllowance} optional max={baseDependentAllowance(person.kind, allowanceSets[location]) / 2} onChange={(value) => updateDependent(person.id, { sharedCareAllowance: value })} hint="Ohne Kindeseinkommen bleibt das Feld für den automatischen Halbansatz leer. Bei Kindergeld oder sonstigem Kindeseinkommen ist ein fachlich geprüfter Betrag erforderlich. Jeden manuellen Ansatz im Prüfvermerk begründen." />
+                      <label className="field"><span className="field-label">Prüfvermerk zum Wechselmodell</span><input id={`shared-note-${person.id}`} value={person.sharedCareNote} onChange={(event) => updateDependent(person.id, { sharedCareNote: event.target.value })} /></label>
+                      <p className="calculation-note span-2">Nur für tatsächlich paritätische Betreuung. Ansatz: hälftiger Altersfreibetrag plus gezahlter Barunterhalt (BGH XII ZB 276/21; XII ZB 19/21). Kindergeld und eigenes Einkommen erfordern einen geprüften Freibetrag; Wohn- und sonstige Mehrkosten werden gesondert geprüft.</p>
+                    </> : null}
                     {person.deductionMode === "allowance" ? <><MoneyInput id={`dependent-deductions-${person.id}`} label="Abzüge vom eigenen Einkommen" value={person.ownIncomeDeductions} onChange={(value) => updateDependent(person.id, { ownIncomeDeductions: value })} /><label className="switch-row compact-switch"><input type="checkbox" checked={person.incomeAlreadyAdjusted} onChange={(event) => updateDependent(person.id, { incomeAlreadyAdjusted: event.target.checked })} /><span className="switch" aria-hidden="true" /><span><strong>Einkommen bereits bereinigt</strong><small>Keine weiteren Abzüge.</small></span></label></> : null}
+                    {person.deductionMode === "allowance" && !person.incomeAlreadyAdjusted && (person.kind === "adultEmployed" || person.kind === "teenEmployed") ? <EmploymentFields prefix={`dependent-${person.id}`} relative value={person} standard={allowanceSets[location].employed} onChange={(patch) => updateDependent(person.id, patch)} /> : null}
                     <div className="dependent-allowance" aria-live="polite">
-                      <span>{person.deductionMode === "maintenance" ? "Unterhaltszahlung" : "Verbleibender Freibetrag"}</span>
+                      <span>{person.deductionMode === "shared" ? "Hälftiger Freibetrag + Barunterhalt" : person.deductionMode === "maintenance" ? "Unterhaltszahlung" : "Verbleibender Freibetrag"}</span>
                       <strong>{euro.format(calculateDependentDeduction(effectiveDependents[index], allowanceSets[location]))}</strong>
-                      {person.deductionMode === "maintenance" ? (
+                      {person.deductionMode === "shared" ? <small>{dependentDetails(effectiveDependents[index], allowanceSets[location]).message || "Paritätisches Wechselmodell; kein zusätzlicher voller Kinderfreibetrag"}</small> : person.deductionMode === "maintenance" ? (
                         <small>tatsächlich gezahlter Betrag</small>
                       ) : person.kind === "adultEmployed" || person.kind === "teenEmployed" ? (
-                        <small>{person.incomeAlreadyAdjusted ? "Einkommen bereits bereinigt; kein weiterer Erwerbstätigenfreibetrag" : `Einkommen bereinigt um ${compactEuro.format(allowanceSets[location].employed)}`}</small>
+                        <small>{person.incomeAlreadyAdjusted ? "Einkommen bereits bereinigt; kein weiterer Erwerbstätigenfreibetrag" : `Einkommen bereinigt um ${compactEuro.format(calculation.dependentResults[index].employment.amount)}; ${calculation.dependentResults[index].employment.description}`}</small>
                       ) : effectiveDependents[index].ownIncome > 0 ? <small>nach Einkommensanrechnung</small> : <small>{legalBasis.shortName}</small>}
                     </div>
                     </div><button className="icon-button" type="button" aria-label={`Person ${index + 1} entfernen`} onClick={() => { setDependents((current) => current.filter((item) => item.id !== person.id)); setIncomeItems((items) => items.filter((item) => item.recipient !== `dependent-${person.id}`)); }}>×</button>
@@ -632,6 +667,7 @@ export default function Home() {
           </section>
           <section className="form-card" id="vermoegen">
             <SectionHeader number="06" title="Vermögen und Kosten" subtitle="Ergänzende Prüfung nach § 115 Abs. 3 und 4 ZPO" />
+            <p className="calculation-note">Planung für eine Erstbewilligung: automatische Staffelprognose höchstens bis vier Jahre ab Bewilligung (§ 120 Abs. 1 ZPO). Nachprüfung nach § 120a ZPO und frühere Zahlungen sind gesondert zu prüfen. Die Grenze von 48 Zahlungsraten ist kein pauschaler Vierjahres-Zahlungszeitraum.</p>
             <div className="field-grid">
               <OptionalMoneyInput id="assets" label="Einzusetzender Vermögensteil" value={assetContribution} onChange={setAssetContribution} hint="Nur nach gesonderter Zumutbarkeitsprüfung; 0 Euro bewusst eintragen." />
               <OptionalMoneyInput id="costs" label="Voraussichtliche Verfahrenskosten" value={estimatedCosts} onChange={setEstimatedCosts} hint="Für den Vergleich mit vier Monatsraten zuzüglich Vermögenseinsatz." />
@@ -663,8 +699,9 @@ export default function Home() {
           {!incomplete ? <div className="maximum">
             <span>Rechnerische Obergrenze bei {monthlyRate.maximumInstallments} Raten, vorbehaltlich tatsächlicher Kosten</span>
             <strong>{calculation.maximumContribution == null ? "Nicht bestimmbar" : euro.format(calculation.maximumContribution)}</strong>
-            <small>Ratenplan ab {calculation.paymentPlanStartMonth ?? "Bewilligung"}; spätere Ratenstufen berücksichtigt.</small>
+            <small>{calculation.futurePlanNeedsReview ? "Staffelprognose offen; siehe Prüfhinweis." : `Ratenplan ab ${calculation.paymentPlanStartMonth ?? "Bewilligung"}; spätere Ratenstufen berücksichtigt.`}</small>
           </div> : null}
+          {calculation.futurePlanNeedsReview ? <p className="validation-note">{calculation.futurePlanMessage}</p> : null}
           {calculation.futureRates.map((step) => <div className="calculated-line" key={step.from}><span>Ab {step.from} nach Wegfall befristeter Belastung</span><strong>{euro.format(step.monthlyRate)}</strong></div>)}
           {incomplete ? <p className="validation-note">{validationMessage}</p> : null}
           <div className="action-row">
