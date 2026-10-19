@@ -25,7 +25,10 @@ Prozess- und Verfahrenskostenhilfe nach § 115 ZPO.
 - Einzelpositionen für weitere Einnahmen mit Empfänger, Zeitraum und Belegverweis
 - begründbarer Wohnkostenanteil und Folgeraten nach Wegfall befristeter Belastungen
 - gesonderte Fahrtkosten zur Arbeit: Pkw-Monatspauschale je vollem einfachen Entfernungskilometer ohne 40-km-Grenze, ÖPNV oder begründeter Monatsbetrag; Erstattungen werden einmal berücksichtigt
-- vollständig lokale Verarbeitung ohne Speicherung oder Datenübertragung
+- Kostendeckung und Ratenobergrenze über alle erfassten Ratenstufen; optionaler Ratenbeginn
+- fünf Darstellungen: Gericht, Papier, Terminal, Bernstein und Eisblau
+- Smartphone-Ansicht mit Abschnittsnavigation und direkt erreichbarem Ergebnis
+- vollständig lokale Verarbeitung ohne Speicherung oder Übertragung von Berechnungsdaten; nur die gewählte Darstellung wird im Browser gespeichert
 
 ## Rechtsgrundlagen und Rechenstand
 
@@ -68,17 +71,38 @@ Die im Terminal angezeigte lokale Adresse anschließend im Browser öffnen.
 ```bash
 npm run build
 npm test
+npm run lint
+npm run audit:security
 npm run build:pages
 npm run build:single
 ```
 
-Die Browsertests prüfen Fahrtkosten auf Desktop und Mobilgerät einschließlich
-Druckfassung und Offline-HTML. Einmalig den Testbrowser installieren:
+Die Browsertests prüfen Fahrtkosten, Themes, Kontraste und Formularbreiten ab
+320 Pixeln auf Desktop und Mobilgerät einschließlich Druckfassung, Offline-HTML
+und Inhalten ohne JavaScript. Die Fachtests enthalten unabhängige Referenzfälle
+für Rundung, Unterhalt, Wohnkosten und zeitliche Ratenstufen. Der Worker wird in
+der lokalen workerd-Laufzeit geprüft. Einmalig den Testbrowser installieren:
 
 ```bash
 npx playwright install --with-deps chromium
 npm run test:browser
 ```
+
+Geldbeträge dürfen ein Dezimalkomma oder einen Dezimalpunkt enthalten, jedoch
+keine Tausendertrennzeichen. Ungültige, mehrdeutige oder übergroße Werte sperren
+die Ratenberechnung. Pro Eingabefeld sind höchstens eine Milliarde Euro und zwei
+Nachkommastellen möglich. Der native Browserdruck zeigt bei unvollständigen
+Angaben nur einen Fehlervermerk.
+
+Für die Kostendeckung wird ohne abweichenden Ratenbeginn der Bewilligungsmonat
+angenommen. Monate mit null Euro zählen nicht als gezahlte Raten. Der Plan
+berücksichtigt sämtliche erfassten Folgeraten; die Vier-Raten-Prüfung bleibt
+eine gesonderte Prüfung anhand der anfänglichen Einkommensrate.
+
+Nach `npm run build` startet `npm start` den Worker ausdrücklich lokal über
+Wrangler. Die Abhängigkeitsprüfung und die bis 19.11.2026 befristete Einordnung
+eines ungepatchten Compiler-/Linterpakets sind unter
+[`docs/dependency-security.md`](docs/dependency-security.md) dokumentiert.
 
 Fahrtkosten werden ausschließlich im eigenen Bereich erfasst. Bereits im
 Sammelfeld oder im Gewinn enthaltene Fahrtkosten dürfen nicht zusätzlich
@@ -90,3 +114,16 @@ die amtlichen Quellen stehen in den aktuellen und historischen Rechtsdaten.
 Der statische GitHub-Pages-Build wird bei Änderungen auf `main` automatisch
 veröffentlicht. Der Ein-Datei-Build wird bei einem Versions-Tag automatisch
 als HTML-Datei unter GitHub Releases bereitgestellt.
+
+## Darstellung und Suchmaschinen
+
+Das Waagen-Icon wird als SVG-Favicon, PNG-Favicon, Apple-Touch-Icon und in den
+Installationsgrößen des Webmanifests bereitgestellt. `node scripts/build-brand-assets.mjs`
+erzeugt diese Dateien und das Vorschaubild für geteilte Links erneut.
+
+Die öffentliche Seite liefert Titel, Beschreibung, kanonische URL, Sitemap,
+Open-Graph-/Twitter-Vorschau und strukturierte Daten zur Webanwendung. Ein
+Einleitungstext und häufige Fragen sind bereits im initialen HTML enthalten.
+Die fünf Themes und ihre lokal eingebetteten Schriften funktionieren auch in
+der herunterladbaren HTML-Datei. Herkunft und Schriftlizenz stehen unter
+[`app/design/README.md`](app/design/README.md).

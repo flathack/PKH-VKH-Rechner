@@ -1,8 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useState } from "react";
+import AmountInput, { AmountValidationContext } from "./amount-input";
 import { ALLOWANCE_SETS as currentAllowanceSets, LEGAL_DATA, calculateDependentDeduction, calculatePkh, legalDataForDate } from "./pkh-law.mjs";
 import { incomeForRecipient, monthlyIncome } from "./income-items.mjs";
+import { BRAND_ICON_SVG } from "./branding.mjs";
+import ThemeSelector from "./theme-selector";
+import CalculatorInfo from "./calculator-info";
 
 type LocationKey = "bund" | "ffb" | "muenchen" | "landkreisMuenchen";
 type DependentKind = "adult" | "adultEmployed" | "teen" | "teenEmployed" | "child" | "youngChild";
@@ -83,42 +87,12 @@ const evidenceFields = {
 type EvidenceKey = keyof typeof evidenceFields;
 let nextEntryId = 1;
 
-function OptionalMoneyInput({ id, label, value, onChange, hint }: { id: string; label: string; value: number | null; onChange: (value: number | null) => void; hint?: string }) {
-  return <label className="field" htmlFor={id}><span className="field-label">{label}</span><span className="money-control"><input id={id} type="number" min="0" step="0.01" inputMode="decimal" value={value ?? ""} placeholder="Nicht angegeben" onChange={(event) => onChange(event.target.value === "" ? null : Math.max(0, Number(event.target.value) || 0))} /><span aria-hidden="true">€</span></span>{hint ? <small>{hint}</small> : null}</label>;
+function OptionalMoneyInput(props: { id: string; label: string; value: number | null; onChange: (value: number | null) => void; hint?: string }) {
+  return <AmountInput key={props.id} {...props} optional />;
 }
 
-function MoneyInput({
-  id,
-  label,
-  value,
-  onChange,
-  hint,
-}: {
-  id: string;
-  label: string;
-  value: number;
-  onChange: (value: number) => void;
-  hint?: string;
-}) {
-  return (
-    <label className="field" htmlFor={id}>
-      <span className="field-label">{label}</span>
-      <span className="money-control">
-        <input
-          id={id}
-          type="number"
-          min="0"
-          step="0.01"
-          inputMode="decimal"
-          value={value || ""}
-          placeholder="0,00"
-          onChange={(event) => onChange(Math.max(0, Number(event.target.value) || 0))}
-        />
-        <span aria-hidden="true">€</span>
-      </span>
-      {hint ? <small>{hint}</small> : null}
-    </label>
-  );
+function MoneyInput(props: { id: string; label: string; value: number; onChange: (value: number) => void; hint?: string }) {
+  return <AmountInput key={props.id} {...props} onChange={(value) => props.onChange(value ?? 0)} />;
 }
 
 function SectionHeader({ number, title, subtitle }: { number: string; title: string; subtitle: string }) {
@@ -174,6 +148,17 @@ export default function Home() {
   const [evidenceNotes, setEvidenceNotes] = useState<Record<EvidenceKey, string>>({ netIncome: "", otherIncome: "", annualPayments: "", mandatoryDeductions: "", warmRent: "", insuranceAndWork: "", additionalMaintenance: "", additionalNeeds: "", specialBurdens: "" });
   const [customDeductions, setCustomDeductions] = useState<CustomDeduction[]>([]);
   const [caseNumber, setCaseNumber] = useState("");
+  const [paymentStartMonth, setPaymentStartMonth] = useState("");
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [formRevision, setFormRevision] = useState(0);
+  const reportFieldError = useCallback((id: string, error: string) => {
+    setFieldErrors((current) => {
+      if ((current[id] ?? "") === error) return current;
+      const next = { ...current };
+      if (error) next[id] = error; else delete next[id];
+      return next;
+    });
+  }, []);
 
   const assignedIncome = (recipient: string) => incomeForRecipient(incomeItems, recipient);
   const effectiveDependents = dependents.map((person) => ({ ...person, ownIncome: person.ownIncome + assignedIncome(`dependent-${person.id}`) }));
@@ -202,14 +187,17 @@ export default function Home() {
     specialBurdens,
     specialEndDate,
     approvalDate,
+    paymentStartMonth,
     assetContribution,
     estimatedCosts,
     customDeductions,
   }, law ?? LEGAL_DATA);
-  const validationMessage = !law ? "Für dieses Bewilligungsdatum ist kein geprüfter Rechtsstand hinterlegt."
-    : calculation.expiredBurdenInput ? "Eine befristete Belastung endet vor dem Bewilligungsmonat."
+  const validationMessage = Object.values(fieldErrors)[0] || (!law ? "Für dieses Bewilligungsdatum ist kein geprüfter Rechtsstand hinterlegt."
+    : calculation.invalidBurdenEndInput ? "Bitte einen gültigen letzten Monat für die befristeten Belastungen wählen."
+      : calculation.expiredBurdenInput ? "Eine befristete Belastung endet vor dem Bewilligungsmonat."
       : calculation.housingIncomplete ? "Für die gewählte Wohnkostenaufteilung fehlt eine Angabe."
-        : calculation.travelCosts.validationMessage;
+        : calculation.paymentPlanIncomplete ? "Bitte einen gültigen Ratenbeginn ab dem Bewilligungsmonat wählen."
+          : calculation.travelCosts.validationMessage);
   const incomplete = Boolean(validationMessage);
   const travelDescription = travel.method === "car"
     ? `Pkw-Pauschale: ${calculation.travelCosts.fullKilometers} volle einfache Entfernungskilometer × ${euro.format((law ?? LEGAL_DATA).travelCosts.carMonthlyRatePerKm)} monatlich`
@@ -273,6 +261,9 @@ export default function Home() {
     setEvidenceNotes({ netIncome: "", otherIncome: "", annualPayments: "", mandatoryDeductions: "", warmRent: "", insuranceAndWork: "", additionalMaintenance: "", additionalNeeds: "", specialBurdens: "" });
     setCustomDeductions([]);
     setCaseNumber("");
+    setPaymentStartMonth("");
+    setFieldErrors({});
+    setFormRevision((current) => current + 1);
   };
 
   const printDate = new Intl.DateTimeFormat("de-DE", {
@@ -282,25 +273,26 @@ export default function Home() {
   }).format(new Date());
 
   return (
-    <main>
+    <AmountValidationContext.Provider value={reportFieldError}><main>
+      <a className="skip-link" href="#einkommen">Direkt zum Rechner</a>
       <header className="topbar">
         <a className="brand" href="#top" aria-label="PKH VKH Ratenrechner – Start">
-          <span className="brand-mark">§</span>
+          <span className="brand-mark" aria-hidden="true" dangerouslySetInnerHTML={{ __html: BRAND_ICON_SVG }} />
           <span>
             <strong>PKH · VKH</strong>
             <small>Ratenrechner</small>
           </span>
         </a>
-        <div className="privacy-badge"><span /> Lokal &amp; datensparsam</div>
+        <div className="topbar-actions"><div className="privacy-badge"><span /> Lokal &amp; datensparsam</div><ThemeSelector /></div>
       </header>
 
       <section className="hero" id="top">
         <div>
           <span className="eyebrow">Berechnungsjahr {calculationYear}</span>
-          <h1>Monatsrate für Prozess- und Verfahrenskostenhilfe</h1>
+          <h1>{law ? `PKH- und VKH-Rechner ${calculationYear}` : "PKH- und VKH-Rechner"}</h1>
           <p>
-            Ermitteln Sie die voraussichtliche Rate nach § 115 ZPO. Die Berechnung erfolgt
-            ausschließlich auf diesem Gerät.
+            Monatsrate für Prozess- und Verfahrenskostenhilfe nach § 115 ZPO überschlägig berechnen.
+            Alle Angaben bleiben auf diesem Gerät.
           </p>
         </div>
         <div className="hero-law">
@@ -310,10 +302,14 @@ export default function Home() {
         </div>
       </section>
 
-      <article className="print-document" aria-label="Druckfassung der PKH- und VKH-Ratenberechnung">
+      <nav className="section-nav" aria-label="Berechnungsabschnitte">
+        <a href="#einkommen">Einkommen</a><a href="#unterhalt">Unterhalt</a><a href="#wohnen">Wohnen</a><a href="#fahrtkosten">Fahrtkosten</a><a href="#abzuege">Abzüge</a><a href="#ergebnis">Ergebnis</a>
+      </nav>
+
+      <article className={`print-document${incomplete ? " incomplete-document" : ""}`} aria-label="Druckfassung der PKH- und VKH-Ratenberechnung">
         <header className="document-header">
           <div className="document-wordmark">
-            <span>§</span>
+            <span aria-hidden="true" dangerouslySetInnerHTML={{ __html: BRAND_ICON_SVG }} />
             <div><strong>PKH · VKH</strong><small>Ratenberechnung</small></div>
           </div>
           <dl className="document-meta">
@@ -330,14 +326,15 @@ export default function Home() {
           <span>Berechnung des einzusetzenden Einkommens gemäß § 115 ZPO</span>
         </div>
 
+        {incomplete ? <p className="invalid-print-warning"><strong>Berechnung unvollständig – keine verwendbare Ratenberechnung.</strong><br />{validationMessage}</p> : null}
         <section className="document-section">
           <h2>1. Monatliche Einkünfte</h2>
           <table>
             <tbody>
               <tr><th>Nettoeinkommen{evidenceNotes.netIncome ? ` – Beleg: ${evidenceNotes.netIncome}` : ""}</th><td>{euro.format(netIncome)}</td></tr>
               <tr><th>Sonstige monatliche Einnahmen (Sammelbetrag){evidenceNotes.otherIncome ? ` – Beleg: ${evidenceNotes.otherIncome}` : ""}</th><td>{euro.format(otherIncome)}</td></tr>
-              {incomeItems.filter((item) => item.recipient === "party").map((item) => <tr key={item.id}><th>{item.description || "Weitere Einnahme"} (Partei, {item.period === "annual" ? "Jahresbetrag / 12" : "monatlich"}){item.evidence ? ` – Beleg: ${item.evidence}` : ""}</th><td>{euro.format(monthlyIncome(item))}</td></tr>)}
-              <tr><th>Jährliche Sonderzahlungen, monatlicher Anteil{evidenceNotes.annualPayments ? ` – Beleg: ${evidenceNotes.annualPayments}` : ""}</th><td>{euro.format(calculation.annualMonthlyAmount)}</td></tr>
+              {incomeItems.filter((item) => item.recipient === "party").map((item) => <tr key={item.id}><th>{item.description || "Weitere Einnahme"} (Partei, {item.period === "annual" ? `Jahresbetrag ${euro.format(item.amount)} / 12, monatlich gerundet` : "monatlich"}){item.evidence ? ` – Beleg: ${item.evidence}` : ""}</th><td>{euro.format(monthlyIncome(item))}</td></tr>)}
+              <tr><th>Jährliche Sonderzahlungen {euro.format(annualPayments)} / 12, monatlicher Anteil (gerundet){evidenceNotes.annualPayments ? ` – Beleg: ${evidenceNotes.annualPayments}` : ""}</th><td>{euro.format(calculation.annualMonthlyAmount)}</td></tr>
               <tr className="document-subtotal"><th>Summe der monatlichen Einkünfte</th><td>{euro.format(calculation.grossMonthlyIncome)}</td></tr>
             </tbody>
           </table>
@@ -352,14 +349,14 @@ export default function Home() {
               <tr><th>Erwerbstätigenfreibetrag</th><td>− {euro.format(calculation.employmentAllowance)}</td></tr>
               <tr><th>Freibetrag der Partei</th><td>− {euro.format(calculation.partyAllowance)}</td></tr>
               {spouse ? <tr><th>Freibetrag der Ehe-/Lebenspartnerperson: Ausgangsbetrag {euro.format(allowanceSets[location].party)}, Einkommen {euro.format(spouseIncome + assignedIncome("spouse"))}, eigene Abzüge {spouseIncomeAlreadyAdjusted ? "bereits berücksichtigt" : euro.format(spouseIncomeDeductions)}, Erwerbstätigenfreibetrag {spouseEmployed && !spouseIncomeAlreadyAdjusted ? euro.format(allowanceSets[location].employed) : "kein weiterer Ansatz"}, anrechenbar {euro.format(Math.max(0, allowanceSets[location].party - calculation.spouseAllowance))}</th><td>− {euro.format(calculation.spouseAllowance)}</td></tr> : null}
-              {incomeItems.filter((item) => item.recipient !== "party").map((item) => <tr key={item.id}><th>Bei {item.recipient === "spouse" ? "Partnerperson" : `Person ${dependents.findIndex((person) => item.recipient === `dependent-${person.id}`) + 1}`} {dependents.some((person) => item.recipient === `dependent-${person.id}` && person.deductionMode === "maintenance") ? "erfasst, bei Unterhaltszahlung nicht verrechnet" : "angerechnet"}: {item.description || "Einnahme"} ({item.period === "annual" ? "Jahresbetrag / 12" : "monatlich"}){item.evidence ? ` – Beleg: ${item.evidence}` : ""}</th><td>{euro.format(monthlyIncome(item))}</td></tr>)}
+              {incomeItems.filter((item) => item.recipient !== "party").map((item) => <tr key={item.id}><th>Bei {item.recipient === "spouse" ? "Partnerperson" : `Person ${dependents.findIndex((person) => item.recipient === `dependent-${person.id}`) + 1}`} {dependents.some((person) => item.recipient === `dependent-${person.id}` && person.deductionMode === "maintenance") ? "erfasst, bei Unterhaltszahlung nicht verrechnet" : "angerechnet"}: {item.description || "Einnahme"} ({item.period === "annual" ? `Jahresbetrag ${euro.format(item.amount)} / 12, monatlich gerundet` : "monatlich"}){item.evidence ? ` – Beleg: ${item.evidence}` : ""}</th><td>{euro.format(monthlyIncome(item))}</td></tr>)}
               {effectiveDependents.map((person, index) => (
                 <tr key={person.id}>
                   <th>{person.deductionMode === "maintenance" ? "Unterhaltszahlung" : "Freibetrag"} für unterhaltene Person {index + 1}: {dependentLabels[person.kind]}{person.deductionMode === "allowance" ? `, eigenes Einkommen ${euro.format(person.ownIncome)}, weitere Abzüge ${person.incomeAlreadyAdjusted ? "bereits berücksichtigt" : euro.format(person.ownIncomeDeductions)}, Erwerbstätigenfreibetrag ${(person.kind === "adultEmployed" || person.kind === "teenEmployed") && !person.incomeAlreadyAdjusted ? euro.format(allowanceSets[location].employed) : "kein weiterer Ansatz"}` : ""}</th>
                   <td>− {euro.format(calculateDependentDeduction(person, allowanceSets[location]))}</td>
                 </tr>
               ))}
-              <tr><th>Berücksichtigter Anteil der Unterkunft und Heizung ({housingLabels[housingMode]}; {housingReason || "ohne Begründung"}){evidenceNotes.warmRent ? ` – Beleg: ${evidenceNotes.warmRent}` : ""}</th><td>− {euro.format(calculation.housingShare)}</td></tr>
+              <tr><th>Berücksichtigter Anteil der Unterkunft und Heizung ({housingLabels[housingMode]}; Gesamtkosten {euro.format(warmRent)}{housingMode === "income" ? `; Parteieinkommen nach Pflichtabzügen ${euro.format(calculation.incomeAfterMandatory)}, übriges Haushaltseinkommen ${otherHouseholdIncome == null ? "nicht angegeben" : euro.format(otherHouseholdIncome)}` : housingMode === "heads" ? `; ${householdPeople} Personen` : housingMode === "manual" ? `; eingegebener Anteil ${manualHousingShare == null ? "nicht angegeben" : euro.format(manualHousingShare)}, höchstens Gesamtkosten` : ""}; {housingReason || "ohne Begründung"}){evidenceNotes.warmRent ? ` – Beleg: ${evidenceNotes.warmRent}` : ""}</th><td>− {euro.format(calculation.housingShare)}</td></tr>
               <tr><th>Versicherungen und sonstige notwendige Erwerbskosten{evidenceNotes.insuranceAndWork ? ` – Beleg: ${evidenceNotes.insuranceAndWork}` : ""}</th><td>− {euro.format(insuranceAndWork)}</td></tr>
               {travel.method !== "none" ? <tr data-testid="print-travel"><th>Fahrtkosten zur Arbeit: {travelDescription}. {travel.method !== "public" && travel.reason ? `Begründung: ${travel.reason}. ` : ""}{travel.reimbursement > 0 ? `Erstattung ${euro.format(travel.reimbursement)}; ${travel.reimbursementIncludedInIncome ? "bereits im Einkommen enthalten, kein weiterer Abzug von den Fahrtkosten" : `vom Fahrtkostenansatz abgezogen: ${euro.format(calculation.travelCosts.reimbursementDeducted)}`}. ` : ""}{travel.evidence ? `Beleg: ${travel.evidence}. ` : ""}{travel.method === "car" ? `${sources.travelCostsRegulation.title}; ${sources.travelCostsBgh.title}.` : ""}</th><td>{calculation.travelCosts.incomplete ? "Angaben fehlen" : `− ${euro.format(calculation.travelCosts.deduction)}`}</td></tr> : null}
               <tr><th>Weiterer gesetzlicher Unterhalt / Sonderfälle{evidenceNotes.additionalMaintenance ? ` – Beleg: ${evidenceNotes.additionalMaintenance}` : ""}</th><td>− {euro.format(additionalMaintenance)}</td></tr>
@@ -393,7 +390,8 @@ export default function Home() {
           {calculation.travelCosts.reimbursementExcess > 0 ? <p>Fahrtkostenerstattung: Überschuss von {euro.format(calculation.travelCosts.reimbursementExcess)} über den Fahrtkostenansatz. Anrechnung als Einkommen gesondert prüfen.</p> : null}
           <p>Vermögenseinsatz: {calculation.assetContribution == null ? "nicht angegeben" : euro.format(calculation.assetContribution)} · Voraussichtliche Kosten: {calculation.estimatedCosts == null ? "nicht angegeben" : euro.format(calculation.estimatedCosts)}</p>
           <p>Vier Monatsraten zuzüglich Vermögenseinsatz: {euro.format(calculation.fourRateThreshold)}. {calculation.costExclusion == null ? "Kostenvergleich offen." : calculation.costExclusion ? "Kosten übersteigen diesen Betrag nicht; Ausschluss nach § 115 Abs. 4 ZPO prüfen." : "Kosten übersteigen diesen Betrag."}</p>
-          {calculation.installmentsToCoverCosts != null ? <p>Rechnerische Kostendeckung nach {calculation.installmentsToCoverCosts} Monatsraten nach Vermögenseinsatz. {calculation.costsCoveredWithinCap ? `Innerhalb der Grenze von ${monthlyRate.maximumInstallments} Raten.` : `Außerhalb der Grenze von ${monthlyRate.maximumInstallments} Raten.`}</p> : calculation.estimatedCosts != null && calculation.assetContribution != null ? <p>Mit der aktuellen Rate keine Kostendeckung durch Monatsraten.</p> : null}
+          {calculation.installmentsToCoverCosts != null ? <p>Rechnerische Kostendeckung nach {calculation.installmentsToCoverCosts} Zahlungsraten nach Vermögenseinsatz. {calculation.costsCoveredWithinCap ? `Innerhalb der Grenze von ${monthlyRate.maximumInstallments} Raten.` : `Außerhalb der Grenze von ${monthlyRate.maximumInstallments} Raten.`}</p> : calculation.estimatedCosts != null && calculation.assetContribution != null ? <p>Mit diesem Ratenplan keine Kostendeckung durch Monatsraten.</p> : null}
+          <p>Ratenplanung ab {calculation.paymentPlanStartMonth ?? "Bewilligung"}{paymentStartMonth ? " (angegebener Ratenbeginn)" : " (Annahme: Bewilligungsmonat)"}. Monate ohne Zahlung verbrauchen keine Zahlungsrate; spätere Ratenstufen werden bei der Kostendeckung berücksichtigt.</p>
           {calculation.futureRates.map((step) => <p key={step.from}>Nach Wegfall befristeter Belastungen ab {step.from}: voraussichtlich {euro.format(step.monthlyRate)} monatlich.</p>)}
           <p>Wohnkosten angemessen geprüft: {housingAppropriate ? "ja" : "offen"}. {assessmentNote}</p>
           {incomplete ? <p><strong>Berechnung unvollständig: {validationMessage}</strong></p> : null}
@@ -416,9 +414,9 @@ export default function Home() {
         </footer>
       </article>
 
-      <div className="workspace">
+      <div className="workspace" key={formRevision}>
         <div className="form-column">
-          <section className="form-card">
+          <section className="form-card" id="einkommen">
             <SectionHeader number="01" title="Einkommen" subtitle="Monatliche Einnahmen und gesetzliche Abzüge" />
             <div className="field-grid">
               <label className="field" htmlFor="approval-date"><span className="field-label">Voraussichtliches Bewilligungsdatum</span><input id="approval-date" type="date" value={approvalDate} onChange={(event) => setApprovalDate(event.target.value)} /><small>Bestimmt den maßgeblichen Freibetragsstand.</small></label>
@@ -455,7 +453,7 @@ export default function Home() {
             </label>
           </section>
 
-          <section className="form-card">
+          <section className="form-card" id="unterhalt">
             <SectionHeader number="02" title="Freibeträge und Unterhalt" subtitle="Partei und gesetzlich unterhaltene Personen" />
             <div className="allowance-line allowance-highlight">
               <div><strong>Freibetrag der Partei</strong><small>{allowanceSets[location].label}</small></div>
@@ -503,7 +501,7 @@ export default function Home() {
                 {dependents.map((person, index) => (
                   <div className="dependent-row" key={person.id}>
                     <span className="person-index">{index + 1}</span>
-                    <label className="field">
+                    <div className="dependent-fields"><label className="field">
                       <span className="field-label">Altersgruppe</span>
                       <select value={person.kind} onChange={(event) => updateDependent(person.id, { kind: event.target.value as DependentKind })}>
                         {Object.entries(dependentLabels).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
@@ -528,10 +526,10 @@ export default function Home() {
                       {person.deductionMode === "maintenance" ? (
                         <small>tatsächlich gezahlter Betrag</small>
                       ) : person.kind === "adultEmployed" || person.kind === "teenEmployed" ? (
-                        <small>Einkommen bereinigt um {compactEuro.format(allowanceSets[location].employed)}</small>
-                      ) : person.ownIncome > 0 ? <small>nach Einkommensanrechnung</small> : <small>{legalBasis.shortName}</small>}
+                        <small>{person.incomeAlreadyAdjusted ? "Einkommen bereits bereinigt; kein weiterer Erwerbstätigenfreibetrag" : `Einkommen bereinigt um ${compactEuro.format(allowanceSets[location].employed)}`}</small>
+                      ) : effectiveDependents[index].ownIncome > 0 ? <small>nach Einkommensanrechnung</small> : <small>{legalBasis.shortName}</small>}
                     </div>
-                    <button className="icon-button" type="button" aria-label={`Person ${index + 1} entfernen`} onClick={() => { setDependents((current) => current.filter((item) => item.id !== person.id)); setIncomeItems((items) => items.filter((item) => item.recipient !== `dependent-${person.id}`)); }}>×</button>
+                    </div><button className="icon-button" type="button" aria-label={`Person ${index + 1} entfernen`} onClick={() => { setDependents((current) => current.filter((item) => item.id !== person.id)); setIncomeItems((items) => items.filter((item) => item.recipient !== `dependent-${person.id}`)); }}>×</button>
                   </div>
                 ))}
               </div>
@@ -539,7 +537,7 @@ export default function Home() {
             <MoneyInput id="maintenance" label="Weiterer gesetzlicher Unterhalt / Sonderfälle" value={additionalMaintenance} onChange={setAdditionalMaintenance} />
           </section>
 
-          <section className="form-card">
+          <section className="form-card" id="wohnen">
             <SectionHeader number="03" title="Unterkunft" subtitle="Angemessene Kosten für Wohnung und Heizung" />
             <div className="field-grid">
               <MoneyInput id="warm-rent" label="Warmmiete / Wohnkosten gesamt" value={warmRent} onChange={setWarmRent} />
@@ -555,10 +553,7 @@ export default function Home() {
               {housingMode === "income" ? <OptionalMoneyInput id="household-income" label="Nettoeinkommen der übrigen Personen" value={otherHouseholdIncome} onChange={setOtherHouseholdIncome} hint="Pflichtangabe für diese Aufteilung; 0 Euro bewusst eintragen, falls zutreffend." /> : null}
               {housingMode === "manual" ? <OptionalMoneyInput id="housing-share" label="Anteil der Partei" value={manualHousingShare} onChange={setManualHousingShare} hint="Bis zur Höhe der gesamten Wohnkosten." /> : null}
               {housingMode === "heads" ? (
-                <label className="field" htmlFor="household-people">
-                  <span className="field-label">Personen im Haushalt</span>
-                  <input id="household-people" type="number" min="1" step="1" value={householdPeople} onChange={(event) => setHouseholdPeople(Math.max(1, Math.trunc(Number(event.target.value) || 1)))} />
-                </label>
+                <AmountInput id="household-people" label="Personen im Haushalt" value={householdPeople} onChange={(value) => setHouseholdPeople(value ?? 1)} fractionDigits={0} min={1} max={10000} unit="" placeholder="Personenzahl" />
               ) : null}
               <label className="field span-2" htmlFor="housing-reason"><span className="field-label">Begründung der Aufteilung</span><input id="housing-reason" value={housingReason} onChange={(event) => setHousingReason(event.target.value)} placeholder="z. B. getrennte Haushaltskasse" /></label>
             </div>
@@ -566,7 +561,7 @@ export default function Home() {
             <div className="calculated-line"><span>Berücksichtigter Anteil der Partei</span><strong>{euro.format(calculation.housingShare)}</strong></div>
           </section>
 
-          <section className="form-card">
+          <section className="form-card" id="fahrtkosten">
             <SectionHeader number="04" title="Fahrtkosten zur Arbeit" subtitle="Gesonderter monatlicher Abzug für die Partei" />
             <label className="field" htmlFor="travel-method"><span className="field-label">Berechnungsmethode</span><select id="travel-method" value={travel.method} onChange={(event) => updateTravel({ method: event.target.value as TravelInput["method"] })}>
               <option value="none">Kein gesonderter Ansatz</option>
@@ -576,7 +571,7 @@ export default function Home() {
             </select></label>
             {travel.method !== "none" ? <>
               <div className="field-grid travel-fields">
-                {travel.method === "car" ? <label className="field" htmlFor="travel-distance"><span className="field-label">Einfache Entfernung zur Arbeit (km)</span><input id="travel-distance" type="number" min="0" step="0.1" value={travel.distanceKm ?? ""} placeholder="z. B. 25" onChange={(event) => updateTravel({ distanceKm: event.target.value === "" ? null : Math.max(0, Number(event.target.value) || 0) })} /><small>Volle Kilometer × {euro.format((law ?? LEGAL_DATA).travelCosts.carMonthlyRatePerKm)} pro Monat. Keine zusätzliche Multiplikation mit Rückweg oder Arbeitstagen.</small></label>
+                {travel.method === "car" ? <AmountInput id="travel-distance" label="Einfache Entfernung zur Arbeit (km)" value={travel.distanceKm} onChange={(distanceKm) => updateTravel({ distanceKm })} optional fractionDigits={1} max={100000} unit="km" placeholder="z. B. 25" hint={`Volle Kilometer × ${euro.format((law ?? LEGAL_DATA).travelCosts.carMonthlyRatePerKm)} pro Monat. Keine zusätzliche Multiplikation mit Rückweg oder Arbeitstagen.`} />
                   : <OptionalMoneyInput id="travel-monthly" label={travel.method === "public" ? "Notwendige monatliche Ticketkosten" : "Geprüfter monatlicher Fahrtkostenbetrag"} value={travel.monthlyAmount} onChange={(monthlyAmount) => updateTravel({ monthlyAmount })} hint="Vor Erstattungen eintragen; bereits in anderen Positionen enthaltene Kosten herausrechnen." />}
                 {travel.method !== "public" ? <label className="field" htmlFor="travel-reason"><span className="field-label">{travel.method === "car" ? "Warum ist die Pkw-Nutzung erforderlich?" : "Begründung des abweichenden Ansatzes"}</span><input id="travel-reason" value={travel.reason} onChange={(event) => updateTravel({ reason: event.target.value })} placeholder={travel.method === "car" ? "z. B. kein zumutbarer ÖPNV bei Schichtbeginn" : "z. B. anteiliger Monat oder gerichtliche Vorgabe"} /></label> : null}
                 <MoneyInput id="travel-reimbursement" label="Monatliche Fahrtkostenerstattung" value={travel.reimbursement} onChange={(reimbursement) => updateTravel({ reimbursement })} hint="Soweit nicht im Einkommen erfasst, bis zur Höhe des Fahrtkostenansatzes verrechnen." />
@@ -590,7 +585,7 @@ export default function Home() {
             </> : null}
           </section>
 
-          <section className="form-card">
+          <section className="form-card" id="abzuege">
             <SectionHeader number="05" title="Weitere Abzüge" subtitle="Nachweisbare Mehrbedarfe und besondere Belastungen" />
             <div className="field-grid">
               <MoneyInput id="insurance-work" label="Versicherungen und sonstige Erwerbskosten" value={insuranceAndWork} onChange={setInsuranceAndWork} hint="§ 82 Abs. 2 Nr. 3–4 SGB XII; separat erfasste Fahrtkosten hier nicht nochmals eintragen." />
@@ -614,7 +609,7 @@ export default function Home() {
                 {customDeductions.map((item, index) => (
                   <div className="custom-deduction-row" key={item.id}>
                     <span className="person-index">{index + 1}</span>
-                    <label className="field" htmlFor={`deduction-description-${item.id}`}>
+                    <div className="deduction-fields"><label className="field" htmlFor={`deduction-description-${item.id}`}>
                       <span className="field-label">Beschreibung</span>
                       <input
                         id={`deduction-description-${item.id}`}
@@ -627,7 +622,7 @@ export default function Home() {
                     <MoneyInput id={`deduction-amount-${item.id}`} label="Monatlicher Betrag" value={item.amount} onChange={(amount) => updateCustomDeduction(item.id, { amount })} />
                     <label className="field"><span className="field-label">Letzter Monat (optional)</span><input type="month" value={item.endMonth} onChange={(event) => updateCustomDeduction(item.id, { endMonth: event.target.value })} /></label>
                     <label className="field"><span className="field-label">Beleg / Prüfvermerk</span><input value={item.evidence} onChange={(event) => updateCustomDeduction(item.id, { evidence: event.target.value })} /></label>
-                    <button className="icon-button" type="button" aria-label={`Abzug ${index + 1} entfernen`} onClick={() => setCustomDeductions((current) => current.filter((entry) => entry.id !== item.id))}>×</button>
+                    </div><button className="icon-button" type="button" aria-label={`Abzug ${index + 1} entfernen`} onClick={() => setCustomDeductions((current) => current.filter((entry) => entry.id !== item.id))}>×</button>
                   </div>
                 ))}
                 <div className="custom-deduction-total"><span>Summe der individuellen Abzüge</span><strong>{euro.format(calculation.customDeductionTotal)}</strong></div>
@@ -635,19 +630,20 @@ export default function Home() {
             )}
             <details className="legal-details"><summary>Belegverweise für Sammelpositionen</summary><div className="evidence-grid">{(Object.entries(evidenceFields) as [EvidenceKey, string][]).map(([key, label]) => <label className="field" key={key}><span className="field-label">{label}</span><input value={evidenceNotes[key]} onChange={(event) => setEvidenceNotes((notes) => ({ ...notes, [key]: event.target.value }))} placeholder="z. B. Anlage 3" /></label>)}</div></details>
           </section>
-          <section className="form-card">
+          <section className="form-card" id="vermoegen">
             <SectionHeader number="06" title="Vermögen und Kosten" subtitle="Ergänzende Prüfung nach § 115 Abs. 3 und 4 ZPO" />
             <div className="field-grid">
               <OptionalMoneyInput id="assets" label="Einzusetzender Vermögensteil" value={assetContribution} onChange={setAssetContribution} hint="Nur nach gesonderter Zumutbarkeitsprüfung; 0 Euro bewusst eintragen." />
               <OptionalMoneyInput id="costs" label="Voraussichtliche Verfahrenskosten" value={estimatedCosts} onChange={setEstimatedCosts} hint="Für den Vergleich mit vier Monatsraten zuzüglich Vermögenseinsatz." />
+              <label className="field span-2" htmlFor="payment-start"><span className="field-label">Ratenbeginn (Monat, optional)</span><input id="payment-start" type="month" value={paymentStartMonth} onChange={(event) => setPaymentStartMonth(event.target.value)} /><small>Ohne Angabe gilt der Bewilligungsmonat. Monate ohne Zahlung zählen nicht als gezahlte Raten.</small></label>
               <label className="field span-2" htmlFor="assessment-note"><span className="field-label">Prüfvermerk / fehlende Belege</span><input id="assessment-note" value={assessmentNote} onChange={(event) => setAssessmentNote(event.target.value)} /></label>
             </div>
             <div className="calculated-line"><span>Kostenvergleich</span><strong>{calculation.costExclusion == null ? "Angaben fehlen" : calculation.costExclusion ? "Ausschluss nach § 115 Abs. 4 prüfen" : "Kosten liegen über vier Raten + Vermögen"}</strong></div>
-            {calculation.installmentsToCoverCosts != null ? <div className="calculated-line"><span>Rechnerische Raten bis zur Kostendeckung</span><strong>{calculation.installmentsToCoverCosts} {calculation.costsCoveredWithinCap ? `(innerhalb von ${monthlyRate.maximumInstallments} Raten)` : `(über ${monthlyRate.maximumInstallments} Raten)`}</strong></div> : null}
+            {calculation.installmentsToCoverCosts != null ? <div className="calculated-line"><span>Rechnerische Zahlungsraten bis zur Kostendeckung</span><strong>{calculation.installmentsToCoverCosts} {calculation.costsCoveredWithinCap ? `(innerhalb von ${monthlyRate.maximumInstallments} Raten)` : `(über ${monthlyRate.maximumInstallments} Raten)`}</strong></div> : null}
           </section>
         </div>
 
-        <aside className="result-card" aria-live="polite">
+        <aside className="result-card" id="ergebnis" tabIndex={-1} aria-label="Ergebnis der Ratenberechnung" aria-live="polite">
           <div className="result-kicker">Voraussichtliche Monatsrate</div>
           <div className="rate">{incomplete ? "—" : euro.format(calculation.monthlyRate)}</div>
           <div className={`result-status ${calculation.monthlyRate > 0 ? "rate-due" : "no-rate"}`}>
@@ -666,7 +662,8 @@ export default function Home() {
 
           {!incomplete ? <div className="maximum">
             <span>Rechnerische Obergrenze bei {monthlyRate.maximumInstallments} Raten, vorbehaltlich tatsächlicher Kosten</span>
-            <strong>{euro.format(calculation.monthlyRate * monthlyRate.maximumInstallments)}</strong>
+            <strong>{calculation.maximumContribution == null ? "Nicht bestimmbar" : euro.format(calculation.maximumContribution)}</strong>
+            <small>Ratenplan ab {calculation.paymentPlanStartMonth ?? "Bewilligung"}; spätere Ratenstufen berücksichtigt.</small>
           </div> : null}
           {calculation.futureRates.map((step) => <div className="calculated-line" key={step.from}><span>Ab {step.from} nach Wegfall befristeter Belastung</span><strong>{euro.format(step.monthlyRate)}</strong></div>)}
           {incomplete ? <p className="validation-note">{validationMessage}</p> : null}
@@ -687,10 +684,12 @@ export default function Home() {
         </aside>
       </div>
 
-      <footer>
+      <div className="mobile-result-bar" aria-label="Kurzergebnis"><div><span>Voraussichtliche Monatsrate</span><strong>{incomplete ? "Angaben fehlen" : euro.format(calculation.monthlyRate)}</strong></div><a href="#ergebnis">Ergebnis ansehen <span aria-hidden="true">↑</span></a></div>
+      <CalculatorInfo />
+      <footer className="site-footer">
         <div><strong>PKH · VKH Ratenrechner</strong><span>Lokale Berechnung ohne Datenübertragung</span></div>
         <p>Rechenstand: {calculationYear} · Freibeträge gemäß {legalBasis.shortName}</p>
       </footer>
-    </main>
+    </main></AmountValidationContext.Provider>
   );
 }

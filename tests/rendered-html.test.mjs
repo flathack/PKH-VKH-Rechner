@@ -4,7 +4,8 @@ import { createHash } from "node:crypto";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
-import test from "node:test";
+import test, { after } from "node:test";
+import { unstable_dev } from "wrangler";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import legalData from "../app/legal-data.json" with { type: "json" };
@@ -29,8 +30,8 @@ const PROJECT_ROOT = fileURLToPath(new URL("../", import.meta.url));
 const PUBLIC_SITE_URL = "https://flathack.github.io/PKH-VKH-Rechner/";
 const PUBLIC_SITEMAP_URL = `${PUBLIC_SITE_URL}sitemap.xml`;
 const SEO_TITLE = `PKH-/VKH-Rechner ${legalData.calculationYear} – Prozesskostenhilfe nach § 115 ZPO`;
-const SEO_DESCRIPTION = `PKH- und VKH-Ratenrechner ${legalData.calculationYear} zur überschlägigen Berechnung der Monatsrate für Prozesskostenhilfe und Verfahrenskostenhilfe nach § 115 ZPO.`;
-const SEO_HEADING = `Prozesskostenhilfe- und Verfahrenskostenhilfe-Rechner ${legalData.calculationYear}`;
+const SEO_DESCRIPTION = `PKH-/VKH-Rechner ${legalData.calculationYear}: Monatsrate nach § 115 ZPO mit Freibeträgen, Unterhalt, Wohn- und Fahrtkosten berechnen. Kostenlos und lokal ohne Upload.`;
+const SEO_HEADING = `PKH- und VKH-Rechner ${legalData.calculationYear}`;
 
 function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -68,17 +69,15 @@ function calculationInput(overrides = {}) {
   };
 }
 
+let workerPromise;
 async function render() {
-  const workerUrl = new URL("../dist/server/index.js", import.meta.url);
-  workerUrl.searchParams.set("test", `${process.pid}-${Date.now()}`);
-  const { default: worker } = await import(workerUrl.href);
-
-  return worker.fetch(
-    new Request("http://localhost/", { headers: { accept: "text/html" } }),
-    { ASSETS: { fetch: async () => new Response("Not found", { status: 404 }) } },
-    { waitUntil() {}, passThroughOnException() {} },
-  );
+  workerPromise ??= unstable_dev(resolve(PROJECT_ROOT, "dist/server/index.js"), {
+    config: resolve(PROJECT_ROOT, "dist/server/wrangler.json"), local: true, port: 0,
+    logLevel: "error", experimental: { disableExperimentalWarning: true },
+  });
+  return (await workerPromise).fetch("/", { headers: { accept: "text/html" } });
 }
+after(async () => { if (workerPromise) await (await workerPromise).stop(); });
 
 test("validiert das zentrale Rechtsstands-Manifest", () => {
   assert.equal(legalData.schemaVersion, 1);
@@ -142,7 +141,7 @@ test("verwendet das Manifest als einzige Quelle für den Rechtsstand", async () 
     assert.doesNotMatch(source, duplicatedLegalState);
   }
   assert.match(pageSource, /Obergrenze bei \{monthlyRate\.maximumInstallments\} Raten/);
-  assert.match(pageSource, /calculation\.monthlyRate \* monthlyRate\.maximumInstallments/);
+  assert.match(pageSource, /calculation\.maximumContribution/);
 });
 
 test("leitet die Ratenparameter aus dem Manifest ab", () => {
@@ -227,7 +226,7 @@ test("liefert den lokalen PKH/VKH-Ratenrechner aus", async () => {
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
 
   const html = await response.text();
-  assert.match(html, /<html lang="de">/i);
+  assert.match(html, /<html lang="de"[^>]*>/i);
   assert.match(html, new RegExp(`<title>${escapeRegExp(SEO_TITLE)}<\\/title>`, "i"));
   assert.equal((html.match(/rel="canonical"/gi) ?? []).length, 1);
   assert.match(html, new RegExp(`<link[^>]+rel="canonical"[^>]+href="${escapeRegExp(PUBLIC_SITE_URL)}"`, "i"));
@@ -236,7 +235,7 @@ test("liefert den lokalen PKH/VKH-Ratenrechner aus", async () => {
   assert.match(html, /<meta[^>]+name="robots"[^>]+content="index, follow"/i);
   assert.match(html, /<meta[^>]+property="og:type"[^>]+content="website"/i);
   assert.match(html, new RegExp(`<meta[^>]+property="og:url"[^>]+content="${escapeRegExp(PUBLIC_SITE_URL)}"`, "i"));
-  assert.match(html, /<meta[^>]+name="twitter:card"[^>]+content="summary"/i);
+  assert.match(html, /<meta[^>]+name="twitter:card"[^>]+content="summary_large_image"/i);
 
   const structuredDataMatch = html.match(/<script[^>]+type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/i);
   assert.ok(structuredDataMatch, "JSON-LD fehlt im öffentlichen SSR-Artefakt");
@@ -281,7 +280,7 @@ test("erzeugt eine statisch crawlbare und kanonische GitHub-Pages-Ausgabe", asyn
   assert.match(html, /<meta[^>]+property="og:type"[^>]+content="website"/i);
   assert.match(html, new RegExp(`<meta[^>]+property="og:url"[^>]+content="${escapeRegExp(PUBLIC_SITE_URL)}"`, "i"));
   assert.match(html, /<meta[^>]+property="og:locale"[^>]+content="de_DE"/i);
-  assert.match(html, /<meta[^>]+name="twitter:card"[^>]+content="summary"/i);
+  assert.match(html, /<meta[^>]+name="twitter:card"[^>]+content="summary_large_image"/i);
   assert.match(html, new RegExp(`<link[^>]+rel="sitemap"[^>]+href="${escapeRegExp(PUBLIC_SITEMAP_URL)}"`, "i"));
 
   const structuredDataMatch = html.match(/<script[^>]+type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/i);
@@ -294,6 +293,22 @@ test("erzeugt eine statisch crawlbare und kanonische GitHub-Pages-Ausgabe", asyn
   assert.equal(structuredData.description, SEO_DESCRIPTION);
   assert.equal(structuredData.inLanguage, "de-DE");
   assert.equal(structuredData.isAccessibleForFree, true);
+  assert.equal(structuredData.offers.price, "0");
+  assert.equal(structuredData.image, `${PUBLIC_SITE_URL}social-card.png`);
+  assert.match(html, /<meta[^>]+property="og:image"[^>]+content="https:\/\/flathack.github.io\/PKH-VKH-Rechner\/social-card.png"/);
+  for (const question of ["Welche Angaben brauche ich?", "Kann ich Fahrtkosten zur Arbeit abziehen?", "Werden meine Berechnungsdaten gespeichert?"]) {
+    assert.ok(html.includes(question), `Ohne JavaScript fehlender Inhalt: ${question}`);
+  }
+  assert.match(html, /rel="icon"[^>]+type="image\/svg\+xml"/);
+  const manifest = JSON.parse(await readFile(new URL("../pages-dist/site.webmanifest", import.meta.url), "utf8"));
+  assert.equal(manifest.start_url, "./");
+  assert.equal(manifest.scope, "./");
+  assert.equal(manifest.icons.length, 2);
+  for (const [name, width, height] of [["favicon-48.png", 48, 48], ["apple-touch-icon.png", 180, 180], ["icon-192.png", 192, 192], ["icon-512.png", 512, 512], ["social-card.png", 1200, 630]]) {
+    const png = await readFile(new URL(`../pages-dist/${name}`, import.meta.url));
+    assert.equal(png.readUInt32BE(16), width, name);
+    assert.equal(png.readUInt32BE(20), height, name);
+  }
 
   const sitemap = await readFile(new URL("../pages-dist/sitemap.xml", import.meta.url), "utf8");
   assert.match(sitemap, /^<\?xml version="1\.0" encoding="UTF-8"\?>/);

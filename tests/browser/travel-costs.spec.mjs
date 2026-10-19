@@ -33,7 +33,9 @@ test("Pkw-Abzug und Monatsrate stimmen in Eingabe, Ergebnis und Druck überein",
   await page.screenshot({ path: testInfo.outputPath("fahrtkosten.png") });
   await expect(page.locator("body")).toHaveJSProperty("scrollWidth", await page.locator("body").evaluate((body) => body.clientWidth));
 
+  await page.locator("#theme-select").selectOption("ice");
   await page.emulateMedia({ media: "print" });
+  await expect(page.locator("body")).toHaveCSS("background-color", "rgb(255, 255, 255)");
   await expect(page.getByTestId("print-travel")).toBeVisible();
   await expect(page.getByTestId("print-travel")).toContainText("25 volle einfache Entfernungskilometer");
   await expect(page.getByTestId("print-travel")).toContainText("Anlage 4, Schichtplan");

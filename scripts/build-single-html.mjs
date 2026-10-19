@@ -38,6 +38,9 @@ const [javaScript, css] = await Promise.all([
   readFile(resolveAsset(scriptMatch[1]), "utf8"),
   readFile(resolveAsset(styleMatch[1]), "utf8"),
 ]);
+for (const match of css.matchAll(/url\(\s*["']?([^"')]+)/gi)) {
+  if (!/^(?:data:|#)/i.test(match[1])) throw new Error(`Nicht eingebettetes CSS-Asset: ${match[1]}`);
+}
 
 const inlineStyle = `<style>${css.replace(/<\/style/gi, "<\\/style")}</style>`;
 const inlineScript = `<script type="module">${javaScript.replace(/<\/script/gi, "<\\/script")}</script>`;
@@ -49,7 +52,10 @@ html = html
   .replace(styleMatch[0], () => inlineStyle)
   .replace(scriptMatch[0], () => inlineScript);
 
-const firstScriptStart = html.indexOf("<script");
+const themeScriptMatch = html.match(/<script\s+data-theme-init(?:="[^"]*")?>([\s\S]*?)<\/script>/i);
+if (!themeScriptMatch) throw new Error("Das eingebettete Theme-Init fehlt.");
+new Script(themeScriptMatch[1], { filename: "theme-init.js" });
+const firstScriptStart = html.indexOf('<script type="module">');
 const firstScriptEnd = html.indexOf(">", firstScriptStart);
 const firstScriptTag = html.slice(firstScriptStart, firstScriptEnd + 1);
 if (firstScriptStart < 0 || !/type="module"/i.test(firstScriptTag) || /\bsrc=/i.test(firstScriptTag)) {
@@ -60,12 +66,13 @@ if (!html.includes("<style>") || /<link\b[^>]*\brel="stylesheet"/i.test(html.sli
   throw new Error("Das CSS wurde nicht vollständig in die HTML-Datei eingebettet.");
 }
 
-if ((html.match(/<\/script/gi) ?? []).length !== 1 || (html.match(/<\/style/gi) ?? []).length !== 1) {
+if ((html.match(/<\/script/gi) ?? []).length !== 2 || (html.match(/<\/style/gi) ?? []).length !== 1) {
   throw new Error("Der Ein-Datei-Build enthält vorzeitig geschlossene Script- oder Style-Blöcke.");
 }
 
-const finalScriptEnd = html.lastIndexOf("</script>");
-const finalJavaScript = html.slice(firstScriptEnd + 1, finalScriptEnd);
+const moduleScript = html.match(/<script type="module">([\s\S]*?)<\/script>/);
+if (!moduleScript) throw new Error("Das eingebettete Rechner-Script fehlt.");
+const finalJavaScript = moduleScript[1];
 new Script(finalJavaScript, { filename: outputName });
 
 await mkdir(releaseDirectory, { recursive: true });

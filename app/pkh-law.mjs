@@ -1,5 +1,7 @@
 import legalData from "./legal-data.json" with { type: "json" };
 import legalHistory from "./legal-history.json" with { type: "json" };
+import { amountToCents, assertSafeCents } from "./amounts.mjs";
+import { calculatePaymentPlan } from "./payment-plan.mjs";
 
 export const LEGAL_DATA = legalData;
 export const ALLOWANCE_SETS = LEGAL_DATA.allowanceSets;
@@ -15,7 +17,7 @@ export function legalDataForDate(date) {
 }
 
 export function toCents(value) {
-  return Math.round((Number(value) || 0) * 100);
+  return amountToCents(value);
 }
 
 export function fromCents(cents) {
@@ -24,7 +26,7 @@ export function fromCents(cents) {
 
 /** Monatsrate nach § 115 Abs. 2 ZPO auf Basis ganzzahliger Centwerte. */
 export function calculateMonthlyRateFromCents(disposableIncomeCents, rateData = LEGAL_DATA.monthlyRate) {
-  const usableCents = Math.max(0, Math.round(Number(disposableIncomeCents) || 0));
+  const usableCents = Math.max(0, assertSafeCents(disposableIncomeCents));
   const { incomeThreshold, thresholdRate, incomeDivisor, minimumRate } = rateData;
   const thresholdCents = toCents(incomeThreshold);
   const roundedRate = usableCents > thresholdCents
@@ -128,7 +130,7 @@ export function calculatePkh(input, law = LEGAL_DATA) {
   const otherIncomeCents = toCents(input.otherIncome);
   const annualMonthlyCents = Math.round(toCents(input.annualPayments) / 12);
   const mandatoryDeductionsCents = toCents(input.mandatoryDeductions);
-  const grossMonthlyIncomeCents = netIncomeCents + otherIncomeCents + annualMonthlyCents;
+  const grossMonthlyIncomeCents = assertSafeCents(netIncomeCents + otherIncomeCents + annualMonthlyCents);
   const incomeAfterMandatoryCents = Math.max(0, grossMonthlyIncomeCents - mandatoryDeductionsCents);
 
   const employmentAllowanceCents = input.employed ? toCents(allowances.employed) : 0;
@@ -137,7 +139,7 @@ export function calculatePkh(input, law = LEGAL_DATA) {
     ? toCents(calculatePersonAllowance(allowances.party, input.spouseIncome, input.spouseIncomeDeductions, input.spouseEmployed, input.spouseIncomeAlreadyAdjusted, allowances.employed))
     : 0;
   const dependentAllowanceCents = input.dependents.reduce(
-    (sum, person) => sum + calculateDependentDeductionCents(person, allowances),
+    (sum, person) => assertSafeCents(sum + calculateDependentDeductionCents(person, allowances)),
     0,
   );
 
@@ -159,7 +161,7 @@ export function calculatePkh(input, law = LEGAL_DATA) {
 
   const totalAllowancesCents = employmentAllowanceCents + partyAllowanceCents + spouseAllowanceCents + dependentAllowanceCents;
   const travelCosts = calculateTravelCosts(input.travel, law);
-  const customDeductionTotalCents = input.customDeductions.reduce((sum, item) => sum + toCents(item.amount), 0);
+  const customDeductionTotalCents = input.customDeductions.reduce((sum, item) => assertSafeCents(sum + toCents(item.amount)), 0);
   const furtherDeductionsCents = toCents(input.insuranceAndWork)
     + toCents(travelCosts.deduction)
     + toCents(input.additionalMaintenance)
@@ -179,26 +181,25 @@ export function calculatePkh(input, law = LEGAL_DATA) {
   const costExclusion = estimatedCosts == null || assetContribution == null ? null : estimatedCosts <= fourRateThreshold;
   const remainingCostsCents = estimatedCosts == null || assetContribution == null
     ? null : Math.max(0, toCents(estimatedCosts) - toCents(assetContribution));
-  const installmentsToCoverCosts = remainingCostsCents == null ? null
-    : remainingCostsCents === 0 ? 0
-      : monthlyRate === 0 ? null : Math.ceil(remainingCostsCents / (monthlyRate * 100));
-  const costsCoveredWithinCap = installmentsToCoverCosts == null ? null
-    : installmentsToCoverCosts <= law.monthlyRate.maximumInstallments;
   const endingAmounts = new Map();
   const approvalMonth = input.approvalDate?.slice(0, 7);
+  const invalidBurdenEndInput = Boolean((input.specialEndDate && input.specialBurdens > 0 && !nextMonth(input.specialEndDate))
+    || input.customDeductions.some((item) => item.endMonth && item.amount > 0 && !nextMonth(item.endMonth)));
   const expiredBurdenInput = Boolean(approvalMonth && (
     (input.specialEndDate && input.specialBurdens > 0 && input.specialEndDate < approvalMonth)
     || input.customDeductions.some((item) => item.endMonth && item.amount > 0 && item.endMonth < approvalMonth)
   ));
-  if (input.specialEndDate && input.specialBurdens > 0) endingAmounts.set(input.specialEndDate, toCents(input.specialBurdens));
+  if (nextMonth(input.specialEndDate ?? "") && input.specialBurdens > 0) endingAmounts.set(input.specialEndDate, toCents(input.specialBurdens));
   for (const item of input.customDeductions) {
-    if (item.endMonth && item.amount > 0) endingAmounts.set(item.endMonth, (endingAmounts.get(item.endMonth) ?? 0) + toCents(item.amount));
+    if (nextMonth(item.endMonth ?? "") && item.amount > 0) endingAmounts.set(item.endMonth, assertSafeCents((endingAmounts.get(item.endMonth) ?? 0) + toCents(item.amount)));
   }
   let endedCents = 0;
   const futureRates = [...endingAmounts.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([endMonth, amountCents]) => {
-    endedCents += amountCents;
+    endedCents = assertSafeCents(endedCents + amountCents);
     return { from: nextMonth(endMonth), monthlyRate: calculateMonthlyRateFromCents(disposableIncomeCents + endedCents, law.monthlyRate) };
   });
+  const paymentPlan = calculatePaymentPlan({ monthlyRate, futureRates, approvalDate: input.approvalDate,
+    paymentStartMonth: input.paymentStartMonth, remainingCostsCents, maximumInstallments: law.monthlyRate.maximumInstallments });
 
   return {
     grossMonthlyIncome: fromCents(grossMonthlyIncomeCents),
@@ -213,6 +214,7 @@ export function calculatePkh(input, law = LEGAL_DATA) {
     housingIncomplete,
     travelCosts,
     expiredBurdenInput,
+    invalidBurdenEndInput,
     customDeductionTotal: fromCents(customDeductionTotalCents),
     furtherDeductions: fromCents(furtherDeductionsCents),
     disposableIncome: fromCents(disposableIncomeCents),
@@ -221,8 +223,7 @@ export function calculatePkh(input, law = LEGAL_DATA) {
     estimatedCosts,
     fourRateThreshold,
     costExclusion,
-    installmentsToCoverCosts,
-    costsCoveredWithinCap,
+    ...paymentPlan,
     futureRate: futureRates[0]?.monthlyRate ?? null,
     futureRateFrom: futureRates[0]?.from ?? null,
     futureRates,
@@ -230,7 +231,7 @@ export function calculatePkh(input, law = LEGAL_DATA) {
 }
 
 export function nextMonth(date) {
-  if (!/^\d{4}-\d{2}$/.test(date)) return null;
+  if (!/^\d{4}-(?:0[1-9]|1[0-2])$/.test(date) || date >= "9999-12") return null;
   const [year, month] = date.split("-").map(Number);
   return `${year + (month === 12 ? 1 : 0)}-${String(month === 12 ? 1 : month + 1).padStart(2, "0")}`;
 }

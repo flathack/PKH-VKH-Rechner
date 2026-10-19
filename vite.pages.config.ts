@@ -4,6 +4,7 @@ import { createSeoMetadataPlugin } from "./build/seo-metadata-plugin";
 
 export default defineConfig({
   root: "standalone",
+  publicDir: "../public",
   base: "/PKH-VKH-Rechner/",
   plugins: [react(), createSeoMetadataPlugin({ publicSite: true })],
   build: {
