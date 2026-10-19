@@ -100,8 +100,8 @@ berücksichtigt sämtliche erfassten Folgeraten; die Vier-Raten-Prüfung bleibt
 eine gesonderte Prüfung anhand der anfänglichen Einkommensrate.
 
 Nach `npm run build` startet `npm start` den Worker ausdrücklich lokal über
-Wrangler. Die Abhängigkeitsprüfung und die bis 19.11.2026 befristete Einordnung
-eines ungepatchten Compiler-/Linterpakets sind unter
+Wrangler. Die Abhängigkeitsprüfung ohne Sicherheitsausnahmen und der Ersatz
+der bisherigen Glob-Bibliothek sind unter
 [`docs/dependency-security.md`](docs/dependency-security.md) dokumentiert.
 
 Fahrtkosten werden ausschließlich im eigenen Bereich erfasst. Bereits im

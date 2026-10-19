@@ -1,0 +1,10 @@
+{
+  "name": "@pkh-vkh/glob-adapter",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Tinyglobby adapter for the synchronous glob calls in Next lint and vinext",
+  "main": "index.cjs",
+  "dependencies": {
+    "tinyglobby": "0.2.17"
+  }
+}

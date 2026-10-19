@@ -114,18 +114,18 @@ test("Kombinierte Referenzfälle mit Unterhalt, Bereinigung und Wohnkosten (#9)"
   assert.equal(allocated.monthlyRate, 244);
 });
 
-test("Tooling-Ausnahme unterdrückt weder neue Ursachen noch kritische Meldungen (#15)", () => {
-  const report = { vulnerabilities: { braces: { severity: "high", nodes: ["node_modules/braces"], via: [{ name: "braces", severity: "high", url: "https://github.com/advisories/GHSA-vfj7-8cjw-p6xm" }] } } };
-  const lock = { packages: { "node_modules/braces": { version: "3.0.3" } } };
-  assert.deepEqual(reviewAudit(report, lock, "2026-10-19"), { reviewed: ["braces"], blocked: [] });
-  assert.deepEqual(reviewAudit(report, lock, "2026-11-19").blocked, ["braces"]);
-  assert.deepEqual(reviewAudit(report, { packages: {} }, "2026-10-19").blocked, ["braces"]);
-  const critical = structuredClone(report); critical.vulnerabilities.braces.severity = "critical";
-  assert.deepEqual(reviewAudit(critical, lock, "2026-10-19").blocked, ["braces"]);
-  const newCause = structuredClone(report); newCause.vulnerabilities.braces.via[0].url = "https://github.com/advisories/new";
-  assert.deepEqual(reviewAudit(newCause, lock, "2026-10-19").blocked, ["braces"]);
-  const extraPath = structuredClone(report); extraPath.vulnerabilities.braces.nodes.push("node_modules/runtime/node_modules/braces");
-  assert.deepEqual(reviewAudit(extraPath, lock, "2026-10-19").blocked, ["braces"]);
+test("Audit akzeptiert keine Sicherheitsausnahme und keinen ungültigen Bericht (#15)", () => {
+  const report = (vulnerabilities) => ({ vulnerabilities, metadata: { vulnerabilities: { total: Object.keys(vulnerabilities).length } } });
+  assert.deepEqual(reviewAudit(report({})), { blocked: [] });
+  for (const severity of ["info", "low", "moderate", "high", "critical"]) {
+    const finding = { severity, nodes: ["node_modules/braces"], via: [{ url: "https://github.com/advisories/GHSA-vfj7-8cjw-p6xm" }] };
+    assert.deepEqual(reviewAudit(report({ braces: finding })), { blocked: ["braces"] });
+  }
+  for (const invalid of [null, {}, { vulnerabilities: {} }, report([]),
+    { ...report({}), error: { message: "registry unavailable" } },
+    { vulnerabilities: {}, metadata: { vulnerabilities: { total: 1 } } }]) {
+    assert.throws(() => reviewAudit(invalid), /Kein gültiger/);
+  }
 });
 
 test("fflate-Override erhält die synchrone ZIP-API für Schriftdaten (#15)", () => {

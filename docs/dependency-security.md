@@ -13,46 +13,48 @@ Kompatible API-Overrides entfernen zwei weitere alte Bibliotheksstände:
   öffentlichen Kompressions-/Dekompressionsfunktionen bleiben kompatibel; ein
   Rundlauf-Test sichert die benötigte synchrone ZIP-API ab.
 
-## Verbleibende, befristete Tooling-Ausnahme
+## Glob-Bibliothek ersetzt, keine Sicherheitsausnahme
 
-`npm audit` meldet noch acht hohe **Paketmeldungen mit derselben Ursache**:
-[GHSA-vfj7-8cjw-p6xm](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm),
-`braces@3.0.3`. Für diese Version bzw. dieses Advisory existiert am Prüfdatum
-keine korrigierte Hersteller-Version. Ein Downgrade von Next-Lint oder vinext,
-wie vom Audit vorgeschlagen, würde andere Korrekturen und Funktionen verlieren.
+Seit v0.5.1 wird die Dateisuche beider Tooling-Pfade durch
+[tinyglobby 0.2.17](https://github.com/SuperchupuDev/tinyglobby) ausgeführt:
 
-Geprüfte Pfade:
+- eslint-config-next → @next/eslint-plugin-next → lokaler Adapter → tinyglobby
+- vinext → vite-plugin-commonjs → vite-plugin-dynamic-import → lokaler Adapter → tinyglobby
 
-- eslint-config-next → @next/eslint-plugin-next → fast-glob → micromatch → braces
-- vinext → vite-plugin-commonjs → vite-plugin-dynamic-import → fast-glob → micromatch → braces
+Der private Adapter unter `tools/fast-glob-adapter` ersetzt per npm-Override
+sämtliche `fast-glob`-Installationen. Er enthält keinen Code aus fast-glob,
+micromatch oder braces. Im Lockfile und nach einer frischen Installation fehlen
+`braces` und `micromatch` vollständig. Damit entfällt die frühere Ausnahme für
+[GHSA-vfj7-8cjw-p6xm](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm).
 
-Der Fehler benötigt ein vom Angreifer vorgegebenes, tief geschachteltes
-Glob-Muster. In diesen Pfaden stammen Muster aus Projektquellen und
-Linter-/Compiler-Konfiguration. Berechnungsdaten, Belegtexte und HTTP-Parameter
-werden nicht als Glob-Muster an diese Bibliothek übergeben. Im geprüften
-Pages-/Offline-Bundle und kompilierten Worker wird dieser Compiler-/Linterpfad
-nicht mitgeliefert. Der Worker wird in den Integrationstests in einer echten
-lokalen workerd-Laufzeit geprüft.
+Die zwei Aufrufer verwenden ausschließlich `sync` bzw. `globSync`, mit `cwd`
+oder `onlyDirectories`. Der Adapter bildet genau diese Schnittstellen ab.
+`expandDirectories: false` erhält die bisherige Behandlung wörtlicher
+Verzeichnispfade; die von tinyglobby angehängten Verzeichnisslashes werden wie
+bei fast-glob entfernt. Absolute und relative Suchpfade behalten ihren Modus;
+gemischte positive Muster innerhalb eines Aufrufs werden abgelehnt. Unbekannte
+Optionen führen zu einem Fehler, damit spätere
+Tooling-Updates keine unbemerkte Verhaltensänderung verursachen. Der Adapter
+ist kein allgemeiner Ersatz für sämtliche fast-glob-APIs.
 
-Die Ausnahme gilt **nur** für diesen Advisory, diese Version und die konkret
-geprüften Paketpfade, längstens bis **19.11.2026**. Danach scheitert das Gate,
-bis die Lage erneut geprüft oder das Paket ersetzt/aktualisiert wurde. Neue
-Advisories, zusätzliche Paketpfade, andere Versionen und kritische Meldungen
-werden nicht durch diese Ausnahme unterdrückt. Fremder Quellcode oder fremde
-Glob-Konfiguration darf nicht in einer privilegierten lokalen/CI-Umgebung
-ausgeführt werden.
+Die Regressionstests prüfen beide tatsächlichen Aufrufer: Next-Lint findet
+Projektverzeichnisse, und das Vite-Plugin findet dynamische Imports einschließlich
+seiner erzeugten Dateiendungsgruppen. Weitere Fälle sichern Ausschlussmuster,
+Unterverzeichnisse, versteckte Dateien und fehlende Verzeichnisexpansion ab.
+Nach Updates von vinext oder eslint-config-next sind diese Schnittstellen erneut
+zu prüfen. Worker-, Pages- und Offline-Build sowie Browserfälle laufen ebenfalls.
 
 ## Regelmäßige Prüfung
 
 `npm run audit:security` fragt den vollständigen aktuellen npm-Auditbericht ab.
-Ein Netzwerk- oder Formatfehler schlägt fehl. Unbekannte hohe und alle kritischen
-Meldungen lassen den Prozess fehlschlagen; die acht bekannten Paketmeldungen
-werden sichtbar mit ihrer befristeten Einordnung ausgegeben. Moderate/niedrige
-Meldungen bleiben im Bericht sichtbar.
+**Jede Meldung führt zum Fehlschlag**, unabhängig von Paket und Schweregrad.
+Es gibt keine Allowlist, ignorierten Advisories oder befristeten Ausnahmen.
+Netzwerk-, Prozess- und Formatfehler werden ebenfalls nicht akzeptiert.
+Die Prüfung vom 19.10.2026 nach frischem `npm ci` meldet **0 Schwachstellen**.
 
 Das Gate läuft vor Pages-/Release-Builds sowie wöchentlich und bei Pull Requests
-im Workflow `Dependency security audit`. Änderungen an der Ausnahme erfordern
-erneute Prüfung der Paketpfade und ihrer Erreichbarkeit.
+im Workflow `Dependency security audit`. Reproduzierbare Installation: Node 22
+und npm 10, wie in der CI; Lockfile und lokaler Adapter werden gemeinsam versioniert.
 
 ## Lokaler Worker
 
